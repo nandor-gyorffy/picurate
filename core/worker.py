@@ -1,0 +1,131 @@
+"""Background job worker — runs in a daemon thread, processes the jobs table."""
+from __future__ import annotations
+
+import json
+import threading
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Callable
+
+from core.db.catalog import CatalogWriter, get_connection
+from core import hashing, thumbnails
+from core.logger import get_logger
+
+log = get_logger("picurate.worker")
+
+
+class JobWorker(threading.Thread):
+    """Single background worker thread that drains the jobs table."""
+
+    def __init__(
+        self,
+        catalog_path: Path | None = None,
+        progress_cb: Callable[[str, int, int], None] | None = None,
+    ):
+        super().__init__(daemon=True, name="picurate-worker")
+        self._catalog_path = catalog_path
+        self._progress_cb = progress_cb
+        self._stop_event = threading.Event()
+        self._wake_event = threading.Event()
+
+    def wake(self) -> None:
+        """Signal the worker to check for new jobs immediately."""
+        self._wake_event.set()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._wake_event.set()
+
+    def run(self) -> None:
+        log.info("Worker started")
+        while not self._stop_event.is_set():
+            try:
+                self._drain()
+            except Exception as exc:
+                log.error("Worker error: %s", exc)
+            self._wake_event.wait(timeout=5.0)
+            self._wake_event.clear()
+        log.info("Worker stopped")
+
+    def _drain(self) -> None:
+        conn = get_connection(self._catalog_path)
+        pending = conn.execute(
+            "SELECT id, job_type, payload FROM jobs WHERE status='pending' ORDER BY id LIMIT 50"
+        ).fetchall()
+
+        total = len(pending)
+        for i, job in enumerate(pending):
+            if self._stop_event.is_set():
+                break
+            self._run_job(job)
+            if self._progress_cb:
+                self._progress_cb(job["job_type"], i + 1, total)
+
+    def _run_job(self, job) -> None:
+        job_id = job["id"]
+        job_type = job["job_type"]
+        payload = json.loads(job["payload"] or "{}")
+        try:
+            self._mark(job_id, "running")
+            if job_type == "full_hash":
+                self._job_full_hash(payload)
+            elif job_type == "thumbnail":
+                self._job_thumbnail(payload)
+            else:
+                log.warning("Unknown job type: %s", job_type)
+            self._mark(job_id, "done")
+        except Exception as exc:
+            log.warning("Job %s (%s) failed: %s", job_id, job_type, exc)
+            self._mark(job_id, "error")
+
+    def _mark(self, job_id: int, status: str) -> None:
+        with CatalogWriter(self._catalog_path) as conn:
+            conn.execute(
+                "UPDATE jobs SET status=?, updated_at=? WHERE id=?",
+                (status, datetime.now().isoformat(), job_id),
+            )
+
+    def _job_full_hash(self, payload: dict) -> None:
+        path = Path(payload["path"])
+        photo_id = payload["photo_id"]
+        if not path.exists():
+            return
+        fhash = hashing.full_hash(path)
+        with CatalogWriter(self._catalog_path) as conn:
+            # Move/relink: if another missing row has this full hash, flag duplicate
+            dup = conn.execute(
+                "SELECT id FROM photos WHERE full_hash=? AND id!=? AND status!='missing'",
+                (fhash, photo_id),
+            ).fetchone()
+            if dup:
+                conn.execute(
+                    "UPDATE photos SET full_hash=?, status='duplicate' WHERE id=?",
+                    (fhash, photo_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE photos SET full_hash=? WHERE id=?",
+                    (fhash, photo_id),
+                )
+            # Confirm relinks: missing row with same full hash → it IS the same file
+            missing = conn.execute(
+                "SELECT id FROM photos WHERE full_hash=? AND status='missing' AND id!=?",
+                (fhash, photo_id),
+            ).fetchone()
+            if missing:
+                # Merge: keep one row (the current one), remove the ghost
+                conn.execute("DELETE FROM photos WHERE id=?", (missing["id"],))
+
+    def _job_thumbnail(self, payload: dict) -> None:
+        path = Path(payload["path"])
+        photo_id = payload["photo_id"]
+        if not path.exists():
+            return
+        thumb = thumbnails.get_thumbnail(path)
+        if thumb:
+            with CatalogWriter(self._catalog_path) as conn:
+                conn.execute(
+                    "UPDATE photos SET thumbnail_path=? WHERE id=?",
+                    (str(thumb), photo_id),
+                )
