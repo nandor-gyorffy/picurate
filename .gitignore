@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+*.lcov
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Picurate runtime data (catalog, cache, logs live in platformdirs — not the repo)
+# But exclude any accidentally-placed db files or thumbnail dirs here too
+*.db
+*.db-wal
+*.db-shm
+thumbnails/
+backups/
+
+# Test photos are tracked (small fixture images only); ignore large photo dumps
+# Uncomment if you add a real photo library here:
+# test-photos/
+
+# PyInstaller / packaging artefacts
+*.spec
+dist/
+build/
