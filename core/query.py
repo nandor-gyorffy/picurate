@@ -5,39 +5,88 @@ import sqlite3
 from pathlib import Path
 
 
+_PHOTO_COLS = """id, file_path, filename, date_taken, camera_make, camera_model,
+                 width, height, gps_lat, gps_lon, file_size, rating, flag, thumbnail_path"""
+
+_PHOTO_COLS_WITH_STATUS = _PHOTO_COLS + ", status"
+
+
+def _build_where(
+    folder: str | None,
+    year: int | None,
+    month: int | None,
+    rating_min: int | None,
+    flag: int | None,
+    search: str | None,
+    collection_id: int | None,
+) -> tuple[str, list]:
+    """Build WHERE clause and params. Handles collection JOIN separately."""
+    clauses: list[str] = ["p.status NOT IN ('missing', 'duplicate')"]
+    params: list = []
+
+    if folder:
+        clauses.append("p.file_path LIKE ?")
+        params.append(str(folder).rstrip("/") + "/%")
+    if year is not None:
+        clauses.append("CAST(strftime('%Y', p.date_taken) AS INTEGER) = ?")
+        params.append(year)
+    if month is not None:
+        clauses.append("CAST(strftime('%m', p.date_taken) AS INTEGER) = ?")
+        params.append(month)
+    if rating_min is not None and rating_min > 0:
+        clauses.append("p.rating >= ?")
+        params.append(rating_min)
+    if flag is not None:
+        clauses.append("p.flag = ?")
+        params.append(flag)
+    if search:
+        clauses.append("p.filename LIKE ?")
+        params.append(f"%{search}%")
+
+    return " AND ".join(clauses), params
+
+
 def get_photos(
     conn: sqlite3.Connection,
     folder: str | None = None,
     year: int | None = None,
     month: int | None = None,
+    rating_min: int | None = None,
+    flag: int | None = None,
+    search: str | None = None,
+    collection_id: int | None = None,
     limit: int = 2000,
     offset: int = 0,
 ) -> list[sqlite3.Row]:
-    """Return photo rows matching the optional filters, newest first."""
-    clauses: list[str] = ["status NOT IN ('missing', 'duplicate')"]
-    params: list = []
+    """Return photo rows matching all active filters, newest first."""
+    where, params = _build_where(folder, year, month, rating_min, flag, search, collection_id)
 
-    if folder:
-        clauses.append("file_path LIKE ?")
-        params.append(str(folder).rstrip("/") + "/%")
+    if collection_id is not None:
+        join = "JOIN collection_photos cp ON cp.photo_id = p.id AND cp.collection_id = ?"
+        params_pre = [collection_id]
+        sql = f"""SELECT {_PHOTO_COLS.replace('id,', 'p.id,').replace(', ', ', p.').lstrip()}
+                  FROM photos p {join}
+                  WHERE {where}
+                  ORDER BY p.date_taken DESC, p.filename
+                  LIMIT ? OFFSET ?"""
+        # Build proper column list for collection query
+        cols = ", ".join(f"p.{c.strip()}" for c in _PHOTO_COLS.split(","))
+        sql = f"""SELECT {cols}
+                  FROM photos p
+                  JOIN collection_photos cp ON cp.photo_id = p.id AND cp.collection_id = ?
+                  WHERE {where}
+                  ORDER BY p.date_taken DESC, p.filename
+                  LIMIT ? OFFSET ?"""
+        return conn.execute(sql, params_pre + params + [limit, offset]).fetchall()
 
-    if year is not None:
-        clauses.append("CAST(strftime('%Y', date_taken) AS INTEGER) = ?")
-        params.append(year)
-
-    if month is not None:
-        clauses.append("CAST(strftime('%m', date_taken) AS INTEGER) = ?")
-        params.append(month)
-
-    where = " AND ".join(clauses)
-    params += [limit, offset]
+    cols = ", ".join(f"p.{c.strip()}" for c in _PHOTO_COLS.split(","))
     return conn.execute(
-        f"""SELECT id, file_path, filename, date_taken, camera_make, camera_model,
-                   width, height, gps_lat, gps_lon, file_size, rating, flag, thumbnail_path
-            FROM photos WHERE {where}
-            ORDER BY date_taken DESC, filename
+        f"""SELECT {cols}
+            FROM photos p
+            WHERE {where}
+            ORDER BY p.date_taken DESC, p.filename
             LIMIT ? OFFSET ?""",
-        params,
+        params + [limit, offset],
     ).fetchall()
 
 
@@ -46,29 +95,27 @@ def count_photos(
     folder: str | None = None,
     year: int | None = None,
     month: int | None = None,
+    rating_min: int | None = None,
+    flag: int | None = None,
+    search: str | None = None,
+    collection_id: int | None = None,
 ) -> int:
-    clauses: list[str] = ["status NOT IN ('missing', 'duplicate')"]
-    params: list = []
-    if folder:
-        clauses.append("file_path LIKE ?")
-        params.append(str(folder).rstrip("/") + "/%")
-    if year is not None:
-        clauses.append("CAST(strftime('%Y', date_taken) AS INTEGER) = ?")
-        params.append(year)
-    if month is not None:
-        clauses.append("CAST(strftime('%m', date_taken) AS INTEGER) = ?")
-        params.append(month)
+    where, params = _build_where(folder, year, month, rating_min, flag, search, collection_id)
+    if collection_id is not None:
+        return conn.execute(
+            f"""SELECT COUNT(*) FROM photos p
+                JOIN collection_photos cp ON cp.photo_id = p.id AND cp.collection_id = ?
+                WHERE {where}""",
+            [collection_id] + params,
+        ).fetchone()[0]
     return conn.execute(
-        f"SELECT COUNT(*) FROM photos WHERE {' AND '.join(clauses)}", params
+        f"SELECT COUNT(*) FROM photos p WHERE {where}", params
     ).fetchone()[0]
 
 
 def get_photo_by_id(conn: sqlite3.Connection, photo_id: int) -> sqlite3.Row | None:
     return conn.execute(
-        """SELECT id, file_path, filename, date_taken, camera_make, camera_model,
-                  width, height, gps_lat, gps_lon, file_size, rating, flag,
-                  thumbnail_path, status
-           FROM photos WHERE id=?""",
+        f"SELECT {_PHOTO_COLS_WITH_STATUS} FROM photos WHERE id=?",
         (photo_id,),
     ).fetchone()
 
@@ -112,13 +159,21 @@ def get_adjacent_photo_ids(
     folder: str | None = None,
     year: int | None = None,
     month: int | None = None,
+    rating_min: int | None = None,
+    flag: int | None = None,
+    search: str | None = None,
+    collection_id: int | None = None,
 ) -> tuple[int | None, int | None]:
-    """Return (prev_id, next_id) for navigation within the current filter."""
-    rows = get_photos(conn, folder=folder, year=year, month=month, limit=10000)
+    """Return (prev_id, next_id) within the current filter context."""
+    rows = get_photos(
+        conn,
+        folder=folder, year=year, month=month,
+        rating_min=rating_min, flag=flag, search=search,
+        collection_id=collection_id,
+        limit=10000,
+    )
     ids = [r["id"] for r in rows]
     if photo_id not in ids:
         return None, None
     idx = ids.index(photo_id)
-    prev_id = ids[idx - 1] if idx > 0 else None
-    next_id = ids[idx + 1] if idx < len(ids) - 1 else None
-    return prev_id, next_id
+    return (ids[idx - 1] if idx > 0 else None), (ids[idx + 1] if idx < len(ids) - 1 else None)

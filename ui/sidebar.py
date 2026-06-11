@@ -1,11 +1,12 @@
-"""Left sidebar: Folders tree + Timeline tree."""
+"""Left sidebar: Library, Folders, Collections, Timeline trees."""
 from __future__ import annotations
 
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QLabel,
+    QInputDialog,
+    QMenu,
     QSizePolicy,
     QTreeWidget,
     QTreeWidgetItem,
@@ -16,6 +17,12 @@ from PySide6.QtWidgets import (
 from core.db.catalog import get_connection
 from core.query import count_photos, get_timeline, get_unique_folders
 from core import settings as _settings
+from core.collections import (
+    create_collection,
+    delete_collection,
+    get_collections,
+    rename_collection,
+)
 
 _MONTH_NAMES = [
     "", "January", "February", "March", "April", "May", "June",
@@ -23,6 +30,7 @@ _MONTH_NAMES = [
 ]
 
 _ROLE_FILTER = Qt.UserRole
+_ROLE_COLLECTION_ID = Qt.UserRole + 1
 
 
 class SidebarWidget(QWidget):
@@ -35,7 +43,7 @@ class SidebarWidget(QWidget):
         self._catalog_path = catalog_path
         self.setMinimumWidth(180)
         self.setMaximumWidth(260)
-        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 4, 0, 0)
@@ -45,13 +53,19 @@ class SidebarWidget(QWidget):
         self._tree.setHeaderHidden(True)
         self._tree.setIndentation(14)
         self._tree.setAnimated(True)
+        self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._tree.itemClicked.connect(self._on_item_clicked)
+        self._tree.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self._tree)
 
         self.refresh()
 
     # ------------------------------------------------------------------
     def refresh(self) -> None:
+        # Remember current selection filter so we can restore it
+        cur = self._tree.currentItem()
+        cur_filt = cur.data(0, _ROLE_FILTER) if cur else None
+
         self._tree.blockSignals(True)
         self._tree.clear()
 
@@ -60,15 +74,35 @@ class SidebarWidget(QWidget):
 
         # ── Library ──────────────────────────────────────────────────
         lib_root = QTreeWidgetItem(self._tree, ["Library"])
-        lib_root.setFlags(Qt.ItemIsEnabled)
+        lib_root.setFlags(Qt.ItemFlag.ItemIsEnabled)
         lib_root.setExpanded(True)
 
         all_item = QTreeWidgetItem(lib_root, [f"All Photos  ({total})"])
         all_item.setData(0, _ROLE_FILTER, {})
 
-        # ── Folders ──────────────────────────────────────────────────
+        picked = count_photos(conn, flag=1)
+        picked_item = QTreeWidgetItem(lib_root, [f"Picked  ({picked})"])
+        picked_item.setData(0, _ROLE_FILTER, {"flag": 1})
+
+        rated = count_photos(conn, rating_min=1)
+        rated_item = QTreeWidgetItem(lib_root, [f"Rated  ({rated})"])
+        rated_item.setData(0, _ROLE_FILTER, {"rating_min": 1})
+
+        # ── Collections ───────────────────────────────────────────────
+        col_root = QTreeWidgetItem(self._tree, ["Collections"])
+        col_root.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        col_root.setExpanded(True)
+        col_root.setData(0, _ROLE_FILTER, None)  # no filter on root
+
+        for col in get_collections(self._catalog_path):
+            node = QTreeWidgetItem(col_root, [f"{col['name']}  ({col['photo_count']})"])
+            node.setData(0, _ROLE_FILTER, {"collection_id": col["id"]})
+            node.setData(0, _ROLE_COLLECTION_ID, col["id"])
+            node.setToolTip(0, col["name"])
+
+        # ── Folders ───────────────────────────────────────────────────
         folders_root = QTreeWidgetItem(self._tree, ["Folders"])
-        folders_root.setFlags(Qt.ItemIsEnabled)
+        folders_root.setFlags(Qt.ItemFlag.ItemIsEnabled)
         folders_root.setExpanded(True)
 
         watch = _settings.get_watch_folders(self._catalog_path)
@@ -77,7 +111,6 @@ class SidebarWidget(QWidget):
         if watch:
             self._build_folder_tree(folders_root, watch, folder_counts)
         else:
-            # No watch folders yet — show top-level unique parents
             for folder, cnt in sorted(folder_counts.items()):
                 node = QTreeWidgetItem(folders_root, [f"{Path(folder).name}  ({cnt})"])
                 node.setData(0, _ROLE_FILTER, {"folder": folder})
@@ -85,7 +118,7 @@ class SidebarWidget(QWidget):
 
         # ── Timeline ─────────────────────────────────────────────────
         time_root = QTreeWidgetItem(self._tree, ["Timeline"])
-        time_root.setFlags(Qt.ItemIsEnabled)
+        time_root.setFlags(Qt.ItemFlag.ItemIsEnabled)
         time_root.setExpanded(True)
 
         timeline = get_timeline(conn)
@@ -103,8 +136,8 @@ class SidebarWidget(QWidget):
                 year_node = QTreeWidgetItem(time_root, [str(y)])
                 year_node.setData(0, _ROLE_FILTER, {"year": y})
             year_total += cnt
-            month_name = _MONTH_NAMES[m] if 1 <= m <= 12 else str(m)
-            m_node = QTreeWidgetItem(year_node, [f"{month_name}  ({cnt})"])
+            mn = _MONTH_NAMES[m] if 1 <= m <= 12 else str(m)
+            m_node = QTreeWidgetItem(year_node, [f"{mn}  ({cnt})"])
             m_node.setData(0, _ROLE_FILTER, {"year": y, "month": m})
 
         if year_node is not None:
@@ -112,7 +145,6 @@ class SidebarWidget(QWidget):
             year_node.setData(0, _ROLE_FILTER, {"year": current_year})
 
         self._tree.blockSignals(False)
-        # Select "All Photos" by default
         self._tree.setCurrentItem(all_item)
 
     def _build_folder_tree(
@@ -121,7 +153,6 @@ class SidebarWidget(QWidget):
         watch_folders: list[str],
         folder_counts: dict[str, int],
     ) -> None:
-        """Build folder nodes rooted at each watch folder."""
         for root_str in watch_folders:
             root = Path(root_str)
             root_total = sum(
@@ -133,7 +164,6 @@ class SidebarWidget(QWidget):
             root_node.setToolTip(0, str(root))
             root_node.setExpanded(True)
 
-            # Immediate sub-folders that contain photos
             sub_folders = sorted({
                 f for f in folder_counts
                 if Path(f).parent == root or (
@@ -152,3 +182,48 @@ class SidebarWidget(QWidget):
         filt = item.data(0, _ROLE_FILTER)
         if filt is not None:
             self.filter_changed.emit(filt)
+
+    def _on_context_menu(self, pos) -> None:
+        item = self._tree.itemAt(pos)
+        if item is None:
+            return
+        cid = item.data(0, _ROLE_COLLECTION_ID)
+        if cid is None:
+            # Right-click on Collections root → offer "New collection"
+            parent = item.parent()
+            if item.text(0) == "Collections" or (parent and parent.text(0) == "Collections" and cid is None):
+                menu = QMenu(self)
+                menu.addAction("New collection…", self._new_collection)
+                menu.exec(self._tree.viewport().mapToGlobal(pos))
+            return
+
+        menu = QMenu(self)
+        menu.addAction("Rename…", lambda: self._rename_collection(cid, item))
+        menu.addSeparator()
+        menu.addAction("Delete collection", lambda: self._delete_collection(cid))
+        menu.exec(self._tree.viewport().mapToGlobal(pos))
+
+    def _new_collection(self) -> None:
+        name, ok = QInputDialog.getText(self, "New Collection", "Collection name:")
+        if ok and name.strip():
+            create_collection(name.strip(), catalog_path=self._catalog_path)
+            self.refresh()
+
+    def _rename_collection(self, cid: int, item: QTreeWidgetItem) -> None:
+        current = item.data(0, _ROLE_COLLECTION_ID)
+        name, ok = QInputDialog.getText(self, "Rename Collection", "New name:")
+        if ok and name.strip():
+            rename_collection(cid, name.strip(), self._catalog_path)
+            self.refresh()
+
+    def _delete_collection(self, cid: int) -> None:
+        from PySide6.QtWidgets import QMessageBox
+        r = QMessageBox.question(
+            self, "Delete Collection",
+            "Delete this collection? Photos are not affected.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if r == QMessageBox.StandardButton.Yes:
+            delete_collection(cid, self._catalog_path)
+            self.refresh()
+            self.filter_changed.emit({})

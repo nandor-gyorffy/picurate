@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from core.db.catalog import get_connection
 from core.query import get_adjacent_photo_ids, get_photo_by_id
+from core import metadata as _meta
 from ui.propspanel import PropertiesPanel
 
 
@@ -225,16 +226,25 @@ class LoupeView(QDialog):
         root.addWidget(bar)
 
     def _setup_shortcuts(self) -> None:
-        QShortcut(QKeySequence(Qt.Key.Key_Left), self).activated.connect(self._go_prev)
-        QShortcut(QKeySequence(Qt.Key.Key_Right), self).activated.connect(self._go_next)
-        QShortcut(QKeySequence(Qt.Key.Key_Escape), self).activated.connect(self.close)
-        QShortcut(QKeySequence(Qt.Key.Key_F), self).activated.connect(self._toggle_fullscreen)
-        QShortcut(QKeySequence(Qt.Key.Key_Plus), self).activated.connect(
-            lambda: self._image_area.zoom(1.25)
-        )
-        QShortcut(QKeySequence(Qt.Key.Key_Minus), self).activated.connect(
-            lambda: self._image_area.zoom(1 / 1.25)
-        )
+        def sc(key, slot):
+            QShortcut(QKeySequence(key), self).activated.connect(slot)
+
+        sc(Qt.Key.Key_Left,   self._go_prev)
+        sc(Qt.Key.Key_Right,  self._go_next)
+        sc(Qt.Key.Key_Escape, self.close)
+        sc(Qt.Key.Key_F,      self._toggle_fullscreen)
+        sc(Qt.Key.Key_Plus,   lambda: self._image_area.zoom(1.25))
+        sc(Qt.Key.Key_Minus,  lambda: self._image_area.zoom(1 / 1.25))
+        sc(Qt.Key.Key_1,      lambda: self._rate(1))
+        sc(Qt.Key.Key_2,      lambda: self._rate(2))
+        sc(Qt.Key.Key_3,      lambda: self._rate(3))
+        sc(Qt.Key.Key_4,      lambda: self._rate(4))
+        sc(Qt.Key.Key_5,      lambda: self._rate(5))
+        sc(Qt.Key.Key_0,      lambda: self._rate(0))
+        sc(Qt.Key.Key_P,      lambda: self._flag(_meta.FLAG_PICK))
+        sc(Qt.Key.Key_X,      lambda: self._flag(_meta.FLAG_REJECT))
+        sc(Qt.Key.Key_U,      lambda: self._flag(_meta.FLAG_NONE))
+        sc(Qt.Key.Key_C,      self._add_to_collection)
 
     # ------------------------------------------------------------------
     def _load(self, photo_id: int) -> None:
@@ -272,23 +282,13 @@ class LoupeView(QDialog):
     # ------------------------------------------------------------------
     def _go_prev(self) -> None:
         conn = get_connection(self._catalog_path)
-        prev_id, _ = get_adjacent_photo_ids(
-            conn, self._photo_id,
-            folder=self._filter_ctx.get("folder"),
-            year=self._filter_ctx.get("year"),
-            month=self._filter_ctx.get("month"),
-        )
+        prev_id, _ = get_adjacent_photo_ids(conn, self._photo_id, **self._filter_ctx)
         if prev_id is not None:
             self._load(prev_id)
 
     def _go_next(self) -> None:
         conn = get_connection(self._catalog_path)
-        _, next_id = get_adjacent_photo_ids(
-            conn, self._photo_id,
-            folder=self._filter_ctx.get("folder"),
-            year=self._filter_ctx.get("year"),
-            month=self._filter_ctx.get("month"),
-        )
+        _, next_id = get_adjacent_photo_ids(conn, self._photo_id, **self._filter_ctx)
         if next_id is not None:
             self._load(next_id)
 
@@ -298,3 +298,24 @@ class LoupeView(QDialog):
         else:
             self.showFullScreen()
         self._is_fullscreen = not self._is_fullscreen
+
+    def _rate(self, rating: int) -> None:
+        if self._photo_id is None:
+            return
+        _meta.set_rating(self._photo_id, rating, self._catalog_path)
+        self._load(self._photo_id)  # refresh props panel
+
+    def _flag(self, flag: int) -> None:
+        if self._photo_id is None:
+            return
+        _meta.set_flag(self._photo_id, flag, self._catalog_path)
+        self._load(self._photo_id)
+
+    def _add_to_collection(self) -> None:
+        if self._photo_id is None:
+            return
+        from ui.collectiondialog import CollectionPickerDialog
+        from core.collections import add_photo
+        dlg = CollectionPickerDialog(self._catalog_path, self)
+        if dlg.exec() and dlg.chosen_id is not None:
+            add_photo(dlg.chosen_id, self._photo_id, self._catalog_path)

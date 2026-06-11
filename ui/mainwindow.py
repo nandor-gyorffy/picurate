@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStatusBar,
     QToolBar,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -22,6 +23,7 @@ from core.logger import get_logger
 from core.paths import catalog_path as default_catalog_path
 from core.scanner import mark_missing, scan_folder
 from core.worker import JobWorker
+from ui.filterbar import FilterBar
 from ui.sidebar import SidebarWidget
 from ui.thumbgrid import ThumbnailGrid
 from ui.propspanel import PropertiesPanel
@@ -62,8 +64,11 @@ class MainWindow(QMainWindow):
         self._scan_thread: _ScanThread | None = None
         self._worker: JobWorker | None = None
         self._result_queue: queue.Queue = queue.Queue()
-        self._active_filter: dict = {}
-        self._loupe = None  # keep a reference so GC doesn't collect it
+        self._sidebar_filter: dict = {}
+        self._filterbar_filter: dict = {}
+        self._loupe = None
+        self._cull_view = None
+        self._in_cull_mode = False
 
         self._setup_catalog()
         self._build_ui()
@@ -136,18 +141,39 @@ class MainWindow(QMainWindow):
         toolbar.addAction(props_act)
         self._props_action = props_act
 
+        toolbar.addSeparator()
+
+        cull_act = QAction("Cull Mode", self)
+        cull_act.setCheckable(True)
+        cull_act.setChecked(False)
+        cull_act.triggered.connect(self._toggle_cull_mode)
+        toolbar.addAction(cull_act)
+        self._cull_action = cull_act
+
         # ── Central three-pane splitter ───────────────────────────────
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(self._splitter)
 
         self._sidebar = SidebarWidget(self._catalog_path)
-        self._sidebar.filter_changed.connect(self._on_filter_changed)
+        self._sidebar.filter_changed.connect(self._on_sidebar_filter_changed)
         self._splitter.addWidget(self._sidebar)
+
+        # Center pane: FilterBar + ThumbnailGrid stacked
+        self._center = QWidget()
+        center_layout = QVBoxLayout(self._center)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(0)
+
+        self._filterbar = FilterBar()
+        self._filterbar.filter_changed.connect(self._on_filterbar_filter_changed)
+        center_layout.addWidget(self._filterbar)
 
         self._grid = ThumbnailGrid(self._catalog_path)
         self._grid.photo_activated.connect(self._on_photo_activated)
         self._grid.photo_selected.connect(self._on_photo_selected)
-        self._splitter.addWidget(self._grid)
+        center_layout.addWidget(self._grid)
+
+        self._splitter.addWidget(self._center)
 
         self._props = PropertiesPanel()
         self._splitter.addWidget(self._props)
@@ -178,10 +204,57 @@ class MainWindow(QMainWindow):
     def _toggle_props(self, checked: bool) -> None:
         self._props.setVisible(checked)
 
+    def _toggle_cull_mode(self, checked: bool) -> None:
+        from ui.cullview import CullView
+        if checked:
+            self._in_cull_mode = True
+            self._filterbar.setVisible(False)
+            self._grid.setVisible(False)
+
+            active = self._merged_filter()
+            self._cull_view = CullView(self._catalog_path, active, parent=self._center)
+            self._center.layout().addWidget(self._cull_view)
+            self._cull_view.show()
+            self._cull_view.exit_requested.connect(lambda: self._cull_action.setChecked(False))
+            self._cull_view.exit_requested.connect(lambda: self._toggle_cull_mode(False))
+            self._cull_view.photo_changed.connect(self._on_cull_photo_changed)
+            self._cull_view.collection_changed.connect(self._sidebar.refresh)
+        else:
+            self._in_cull_mode = False
+            if self._cull_view is not None:
+                self._cull_view.hide()
+                self._center.layout().removeWidget(self._cull_view)
+                self._cull_view.deleteLater()
+                self._cull_view = None
+            self._filterbar.setVisible(True)
+            self._grid.setVisible(True)
+
     # ------------------------------------------------------------------
-    def _on_filter_changed(self, filt: dict) -> None:
-        self._active_filter = filt
-        self._grid.load_photos(filt)
+    def _merged_filter(self) -> dict:
+        return {**self._sidebar_filter, **self._filterbar_filter}
+
+    def _on_sidebar_filter_changed(self, filt: dict) -> None:
+        self._sidebar_filter = filt
+        self._apply_filter()
+
+    def _on_filterbar_filter_changed(self, filt: dict) -> None:
+        self._filterbar_filter = filt
+        self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        merged = self._merged_filter()
+        if self._in_cull_mode and self._cull_view is not None:
+            self._cull_view.set_filter(merged)
+        else:
+            self._grid.load_photos(merged)
+
+    def _on_cull_photo_changed(self, photo_id: int) -> None:
+        from core.db.catalog import get_connection
+        from core.query import get_photo_by_id
+        conn = get_connection(self._catalog_path)
+        row = get_photo_by_id(conn, photo_id)
+        if row:
+            self._props.show_photo(row)
 
     def _on_photo_selected(self, photo_id: int) -> None:
         from core.db.catalog import get_connection
@@ -196,7 +269,7 @@ class MainWindow(QMainWindow):
         self._loupe = LoupeView(
             photo_id,
             self._catalog_path,
-            filter_ctx=self._active_filter,
+            filter_ctx=self._merged_filter(),
             parent=self,
         )
         self._loupe.show()
@@ -250,7 +323,7 @@ class MainWindow(QMainWindow):
         )
         self._worker.wake()
         self._sidebar.refresh()
-        self._grid.load_photos(self._active_filter)
+        self._grid.load_photos(self._merged_filter())
 
     # ------------------------------------------------------------------
     def closeEvent(self, event) -> None:

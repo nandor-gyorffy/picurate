@@ -1,16 +1,21 @@
-"""Thumbnail grid with size slider and lazy pixmap loading."""
+"""Thumbnail grid with size slider, rating/flag overlay, and context menu."""
 from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QSize, QTimer, Signal
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import Qt, QSize, QTimer, Signal, QRect, QPoint
+from PySide6.QtGui import (
+    QColor, QFont, QIcon, QPainter, QPen, QPixmap, QStyledItemDelegate,
+    QStyleOptionViewItem,
+)
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QHBoxLayout,
     QLabel,
     QListView,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -18,10 +23,13 @@ from PySide6.QtWidgets import (
 
 from core.db.catalog import get_connection
 from core.query import get_photos
+from core import metadata as _meta
 
-_ROLE_ID = Qt.UserRole
-_ROLE_PATH = Qt.UserRole + 1
+_ROLE_ID    = Qt.UserRole
+_ROLE_PATH  = Qt.UserRole + 1
 _ROLE_THUMB = Qt.UserRole + 2
+_ROLE_RATE  = Qt.UserRole + 3
+_ROLE_FLAG  = Qt.UserRole + 4
 
 
 def _placeholder_pixmap(size: int) -> QPixmap:
@@ -30,11 +38,52 @@ def _placeholder_pixmap(size: int) -> QPixmap:
     return pix
 
 
-class ThumbnailGrid(QWidget):
-    """Scrollable thumbnail grid with a size slider."""
+# ── Rating/flag delegate ──────────────────────────────────────────────────────
 
-    photo_activated = Signal(int)   # double-click → open loupe
-    photo_selected = Signal(int)    # single-click → show props
+class _ThumbDelegate(QStyledItemDelegate):
+    """Draws star rating and flag colour border on top of the standard icon."""
+
+    _STAR_FONT = QFont("Arial", 9)
+    _STAR_COLOR = QColor(255, 210, 0)
+    _PICK_COLOR = QColor(60, 200, 60)
+    _REJECT_COLOR = QColor(210, 50, 50)
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
+        super().paint(painter, option, index)
+
+        rating = index.data(_ROLE_RATE) or 0
+        flag   = index.data(_ROLE_FLAG) or 0
+
+        rect: QRect = option.rect
+
+        # Draw flag border
+        if flag == 1:
+            painter.save()
+            painter.setPen(QPen(self._PICK_COLOR, 3))
+            painter.drawRect(rect.adjusted(2, 2, -2, -2))
+            painter.restore()
+        elif flag == 2:
+            painter.save()
+            painter.setPen(QPen(self._REJECT_COLOR, 3))
+            painter.drawRect(rect.adjusted(2, 2, -2, -2))
+            painter.restore()
+
+        # Draw star rating at bottom-left
+        if rating > 0:
+            stars = "★" * rating
+            painter.save()
+            painter.setFont(self._STAR_FONT)
+            painter.setPen(self._STAR_COLOR)
+            text_rect = QRect(rect.left() + 4, rect.bottom() - 18, rect.width() - 8, 16)
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom, stars)
+            painter.restore()
+
+
+# ── Thumbnail grid widget ─────────────────────────────────────────────────────
+
+class ThumbnailGrid(QWidget):
+    photo_activated = Signal(int)   # double-click → loupe
+    photo_selected  = Signal(int)   # single-click  → props panel
 
     def __init__(self, catalog_path: Path, parent=None):
         super().__init__(parent)
@@ -47,7 +96,7 @@ class ThumbnailGrid(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # ── toolbar bar ───────────────────────────────────────────────
+        # ── toolbar ───────────────────────────────────────────────────
         bar = QWidget()
         bar.setFixedHeight(36)
         bar_layout = QHBoxLayout(bar)
@@ -75,13 +124,17 @@ class ThumbnailGrid(QWidget):
         self._list.setMovement(QListView.Movement.Static)
         self._list.setSpacing(4)
         self._list.setUniformItemSizes(True)
-        self._list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self._list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._list.setItemDelegate(_ThumbDelegate(self._list))
+        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._apply_icon_size(self._thumb_size)
+
         self._list.itemClicked.connect(self._on_clicked)
         self._list.itemDoubleClicked.connect(self._on_double_clicked)
+        self._list.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self._list)
 
-        # Lazy pixmap loader — processes one batch per event-loop tick
+        # lazy pixmap loader
         self._pending: list[QListWidgetItem] = []
         self._pixmap_timer = QTimer(self)
         self._pixmap_timer.setInterval(0)
@@ -89,7 +142,6 @@ class ThumbnailGrid(QWidget):
 
     # ------------------------------------------------------------------
     def load_photos(self, filt: dict | None = None) -> None:
-        """Rebuild the grid for the given filter (folder / year / month)."""
         if filt is not None:
             self._filter = filt
 
@@ -99,6 +151,10 @@ class ThumbnailGrid(QWidget):
             folder=self._filter.get("folder"),
             year=self._filter.get("year"),
             month=self._filter.get("month"),
+            rating_min=self._filter.get("rating_min"),
+            flag=self._filter.get("flag"),
+            search=self._filter.get("search"),
+            collection_id=self._filter.get("collection_id"),
         )
 
         n = len(rows)
@@ -112,9 +168,11 @@ class ThumbnailGrid(QWidget):
         placeholder = _placeholder_pixmap(self._thumb_size)
         for row in rows:
             item = QListWidgetItem(QIcon(placeholder), row["filename"] or "")
-            item.setData(_ROLE_ID, row["id"])
-            item.setData(_ROLE_PATH, row["file_path"])
+            item.setData(_ROLE_ID,    row["id"])
+            item.setData(_ROLE_PATH,  row["file_path"])
             item.setData(_ROLE_THUMB, row["thumbnail_path"])
+            item.setData(_ROLE_RATE,  row["rating"] or 0)
+            item.setData(_ROLE_FLAG,  row["flag"] or 0)
             item.setToolTip(row["filename"] or "")
             item.setSizeHint(QSize(self._thumb_size + 8, self._thumb_size + 24))
             self._list.addItem(item)
@@ -126,7 +184,6 @@ class ThumbnailGrid(QWidget):
             self._pixmap_timer.start()
 
     def update_thumbnail(self, photo_id: int, thumb_path: str) -> None:
-        """Called by the main thread when the worker finishes a thumbnail job."""
         item = self._item_map.get(photo_id)
         if item is None:
             return
@@ -138,6 +195,20 @@ class ThumbnailGrid(QWidget):
                 Qt.TransformationMode.SmoothTransformation,
             )))
             item.setData(_ROLE_THUMB, thumb_path)
+
+    def refresh_item_metadata(self, photo_id: int) -> None:
+        """Re-read rating/flag from DB and repaint the item (no image reload)."""
+        item = self._item_map.get(photo_id)
+        if item is None:
+            return
+        conn = get_connection(self._catalog_path)
+        row = conn.execute(
+            "SELECT rating, flag FROM photos WHERE id=?", (photo_id,)
+        ).fetchone()
+        if row:
+            item.setData(_ROLE_RATE, row["rating"] or 0)
+            item.setData(_ROLE_FLAG, row["flag"] or 0)
+            self._list.update(self._list.indexFromItem(item))
 
     # ------------------------------------------------------------------
     def _apply_icon_size(self, size: int) -> None:
@@ -165,7 +236,6 @@ class ThumbnailGrid(QWidget):
     def _on_size_changed(self, value: int) -> None:
         self._thumb_size = value
         self._apply_icon_size(value)
-        # Re-scale already-loaded thumbnails
         self._pending = [
             item for item in self._item_map.values()
             if item.data(_ROLE_THUMB) and Path(str(item.data(_ROLE_THUMB))).exists()
@@ -182,3 +252,42 @@ class ThumbnailGrid(QWidget):
         pid = item.data(_ROLE_ID)
         if pid is not None:
             self.photo_activated.emit(pid)
+
+    def _on_context_menu(self, pos: QPoint) -> None:
+        item = self._list.itemAt(pos)
+        if item is None:
+            return
+        photo_id = item.data(_ROLE_ID)
+        if photo_id is None:
+            return
+
+        menu = QMenu(self)
+        rating_menu = menu.addMenu("Set rating")
+        for r in range(6):
+            label = "No rating" if r == 0 else "★" * r
+            rating_menu.addAction(label, lambda _r=r, _pid=photo_id: self._set_rating(_pid, _r))
+
+        flag_menu = menu.addMenu("Set flag")
+        flag_menu.addAction("✓ Pick",   lambda _pid=photo_id: self._set_flag(_pid, _meta.FLAG_PICK))
+        flag_menu.addAction("✗ Reject", lambda _pid=photo_id: self._set_flag(_pid, _meta.FLAG_REJECT))
+        flag_menu.addAction("○ Unflag", lambda _pid=photo_id: self._set_flag(_pid, _meta.FLAG_NONE))
+
+        menu.addSeparator()
+        menu.addAction("Add to collection…", lambda _pid=photo_id: self._add_to_collection(_pid))
+
+        menu.exec(self._list.viewport().mapToGlobal(pos))
+
+    def _set_rating(self, photo_id: int, rating: int) -> None:
+        _meta.set_rating(photo_id, rating, self._catalog_path)
+        self.refresh_item_metadata(photo_id)
+
+    def _set_flag(self, photo_id: int, flag: int) -> None:
+        _meta.set_flag(photo_id, flag, self._catalog_path)
+        self.refresh_item_metadata(photo_id)
+
+    def _add_to_collection(self, photo_id: int) -> None:
+        from ui.collectiondialog import CollectionPickerDialog
+        from core.collections import add_photo
+        dlg = CollectionPickerDialog(self._catalog_path, self)
+        if dlg.exec() and dlg.chosen_id is not None:
+            add_photo(dlg.chosen_id, photo_id, self._catalog_path)
