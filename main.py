@@ -3,11 +3,11 @@
 import sys
 import os
 
-# High-DPI scaling (must be set before QApplication is created)
+# High-DPI scaling — set before QApplication is created.
+# QT_AUTO_SCREEN_SCALE_FACTOR is the recommended env-var approach for PySide6 >= 6.5.
 os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
 
 from core.db.catalog import open_catalog, integrity_check, restore_latest_backup
 from core.logger import get_logger
@@ -20,7 +20,6 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Picurate")
     app.setOrganizationName("Picurate")
-    app.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
     # Startup integrity check
     cp = catalog_path()
