@@ -150,6 +150,13 @@ class MainWindow(QMainWindow):
         toolbar.addAction(cull_act)
         self._cull_action = cull_act
 
+        toolbar.addSeparator()
+
+        export_act = QAction("Export…", self)
+        export_act.setShortcut("Ctrl+E")
+        export_act.triggered.connect(self._on_export)
+        toolbar.addAction(export_act)
+
         # ── Central three-pane splitter ───────────────────────────────
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(self._splitter)
@@ -324,6 +331,11 @@ class MainWindow(QMainWindow):
         self._worker.wake()
         self._sidebar.refresh()
         self._grid.load_photos(self._merged_filter())
+
+    def _on_export(self) -> None:
+        from ui.exportdialog import ExportDialog
+        dlg = ExportDialog(self._catalog_path, parent=self)
+        dlg.exec()
 
     # ------------------------------------------------------------------
     def closeEvent(self, event) -> None:

@@ -199,6 +199,7 @@ class SidebarWidget(QWidget):
 
         menu = QMenu(self)
         menu.addAction("Rename…", lambda: self._rename_collection(cid, item))
+        menu.addAction("Export…", lambda: self._export_collection(cid))
         menu.addSeparator()
         menu.addAction("Delete collection", lambda: self._delete_collection(cid))
         menu.exec(self._tree.viewport().mapToGlobal(pos))
@@ -215,6 +216,11 @@ class SidebarWidget(QWidget):
         if ok and name.strip():
             rename_collection(cid, name.strip(), self._catalog_path)
             self.refresh()
+
+    def _export_collection(self, cid: int) -> None:
+        from ui.exportdialog import ExportDialog
+        dlg = ExportDialog(self._catalog_path, collection_id=cid, parent=self)
+        dlg.exec()
 
     def _delete_collection(self, cid: int) -> None:
         from PySide6.QtWidgets import QMessageBox
