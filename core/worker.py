@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import json
+import queue
 import threading
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -22,15 +22,16 @@ class JobWorker(threading.Thread):
         self,
         catalog_path: Path | None = None,
         progress_cb: Callable[[str, int, int], None] | None = None,
+        result_queue: queue.Queue | None = None,
     ):
         super().__init__(daemon=True, name="picurate-worker")
         self._catalog_path = catalog_path
         self._progress_cb = progress_cb
+        self._result_queue = result_queue
         self._stop_event = threading.Event()
         self._wake_event = threading.Event()
 
     def wake(self) -> None:
-        """Signal the worker to check for new jobs immediately."""
         self._wake_event.set()
 
     def stop(self) -> None:
@@ -53,7 +54,6 @@ class JobWorker(threading.Thread):
         pending = conn.execute(
             "SELECT id, job_type, payload FROM jobs WHERE status='pending' ORDER BY id LIMIT 50"
         ).fetchall()
-
         total = len(pending)
         for i, job in enumerate(pending):
             if self._stop_event.is_set():
@@ -93,9 +93,8 @@ class JobWorker(threading.Thread):
             return
         fhash = hashing.full_hash(path)
         with CatalogWriter(self._catalog_path) as conn:
-            # Move/relink: if another missing row has this full hash, flag duplicate
             dup = conn.execute(
-                "SELECT id FROM photos WHERE full_hash=? AND id!=? AND status!='missing'",
+                "SELECT id FROM photos WHERE full_hash=? AND id!=? AND status NOT IN ('missing','duplicate')",
                 (fhash, photo_id),
             ).fetchone()
             if dup:
@@ -108,13 +107,11 @@ class JobWorker(threading.Thread):
                     "UPDATE photos SET full_hash=? WHERE id=?",
                     (fhash, photo_id),
                 )
-            # Confirm relinks: missing row with same full hash → it IS the same file
             missing = conn.execute(
                 "SELECT id FROM photos WHERE full_hash=? AND status='missing' AND id!=?",
                 (fhash, photo_id),
             ).fetchone()
             if missing:
-                # Merge: keep one row (the current one), remove the ghost
                 conn.execute("DELETE FROM photos WHERE id=?", (missing["id"],))
 
     def _job_thumbnail(self, payload: dict) -> None:
@@ -129,3 +126,5 @@ class JobWorker(threading.Thread):
                     "UPDATE photos SET thumbnail_path=? WHERE id=?",
                     (str(thumb), photo_id),
                 )
+            if self._result_queue is not None:
+                self._result_queue.put(("thumbnail", photo_id, str(thumb)))
