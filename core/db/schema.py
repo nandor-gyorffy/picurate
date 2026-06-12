@@ -138,6 +138,26 @@ MIGRATIONS: list[tuple[int, str]] = [
     ALTER TABLE photos ADD COLUMN clip_embedding TEXT;
     CREATE INDEX IF NOT EXISTS photos_clip ON photos(id) WHERE clip_embedding IS NOT NULL;
     """),
+    (4, """
+    ALTER TABLE photos ADD COLUMN sharpness_score REAL;
+    ALTER TABLE photos ADD COLUMN exposure_score REAL;
+
+    CREATE TABLE IF NOT EXISTS similarity_groups (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        scope      TEXT NOT NULL,
+        threshold  REAL NOT NULL DEFAULT 0.65,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS photo_similarity_group (
+        photo_id           INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+        group_id           INTEGER NOT NULL REFERENCES similarity_groups(id) ON DELETE CASCADE,
+        similarity_to_best REAL,
+        is_suggested_best  INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (photo_id, group_id)
+    );
+    CREATE INDEX IF NOT EXISTS psg_group ON photo_similarity_group(group_id);
+    """),
 ]
 
 

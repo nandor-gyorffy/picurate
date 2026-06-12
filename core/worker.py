@@ -161,10 +161,14 @@ class JobWorker(threading.Thread):
                 conn.execute("UPDATE photos SET phash=? WHERE id=?", (h, photo_id))
 
     def _job_quality(self, payload: dict) -> None:
-        from core.quality import compute_quality_score
+        from core.quality import compute_quality_components
         photo_id = payload["photo_id"]
         path = payload.get("path", "")
-        score = compute_quality_score(path)
-        if score is not None:
+        result = compute_quality_components(path)
+        if result is not None:
+            quality, sharpness, exposure = result
             with CatalogWriter(self._catalog_path) as conn:
-                conn.execute("UPDATE photos SET quality_score=? WHERE id=?", (score, photo_id))
+                conn.execute(
+                    "UPDATE photos SET quality_score=?, sharpness_score=?, exposure_score=? WHERE id=?",
+                    (quality, sharpness, exposure, photo_id),
+                )

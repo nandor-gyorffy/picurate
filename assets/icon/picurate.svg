@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#e8e8e8"/>
+      <stop offset="100%" style="stop-color:#c0c0c0"/>
+    </linearGradient>
+    <linearGradient id="lens" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4a90d9"/>
+      <stop offset="100%" style="stop-color:#1a5fa8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+
+  <!-- Camera body -->
+  <rect x="80" y="170" width="352" height="240" rx="32" fill="url(#body)"/>
+
+  <!-- Viewfinder bump -->
+  <rect x="160" y="130" width="140" height="60" rx="20" fill="#d0d0d0"/>
+
+  <!-- Lens outer ring -->
+  <circle cx="256" cy="295" r="95" fill="#888"/>
+
+  <!-- Lens inner -->
+  <circle cx="256" cy="295" r="80" fill="url(#lens)"/>
+
+  <!-- Lens highlight -->
+  <circle cx="256" cy="295" r="55" fill="#1565c0" opacity="0.7"/>
+  <circle cx="230" cy="270" r="18" fill="white" opacity="0.25"/>
+  <circle cx="278" cy="318" r="6" fill="white" opacity="0.15"/>
+
+  <!-- Lens shine dot -->
+  <circle cx="233" cy="268" r="8" fill="white" opacity="0.55"/>
+
+  <!-- Star (top right corner — the "curate" signal) -->
+  <g transform="translate(390,145) scale(0.9)">
+    <polygon points="0,-28 6.5,-10 25,-10 11,2 16,20 0,9 -16,20 -11,2 -25,-10 -6.5,-10"
+             fill="#f4c430" stroke="#d4a800" stroke-width="2"/>
+  </g>
+
+  <!-- Shutter button -->
+  <circle cx="400" cy="195" r="18" fill="#a0a0a0"/>
+  <circle cx="400" cy="195" r="12" fill="#888"/>
+</svg>

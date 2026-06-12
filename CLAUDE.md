@@ -1,6 +1,6 @@
 # CLAUDE.md — Picurate
 
-This file orients Claude Code for this project. At the start of every session, read it together with `photo-organizer-plan.md`. **Before writing any code, also read Part II (Engineering specifics) of the plan — it pins down the cross-platform and architecture decisions that prevent avoidable bugs.**
+This file orients Claude Code for this project. At the start of every session, read it together with `photo-organizer-plan.md` **and `picurate-addendum.md`** (feature clarifications, extra specs, and UI requirements that supplement or override the plan). **Before writing any code, also read Part II (Engineering specifics) of the plan — it pins down the cross-platform and architecture decisions that prevent avoidable bugs.**
 
 ## What we're building
 **Picurate** is a local, private **desktop** photo organizer for **Windows 10/11 + Ubuntu 22.04+**, in the spirit of Picasa: sort by **people / places / topics**, review folders and **pick photos into collections**, curate **"best of" collections**, **export** collections (incl. a self-contained HTML gallery for a USB stick), and **import** existing organization (Picasa, embedded XMP/IPTC, folder structure). The full spec, engineering details, and staged build plan live in `photo-organizer-plan.md` — that document is the source of truth; this file is the quick brief.

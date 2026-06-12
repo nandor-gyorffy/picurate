@@ -21,12 +21,14 @@ _EXTREME_THRESHOLD = 10    # pixel value (0-255) for very dark / very bright cut
 _EXTREME_FRACTION_MAX = 0.20  # fraction of extreme pixels that maps to 0 exposure score
 
 
-def compute_quality_score(file_path: str | Path) -> float | None:
-    """Return a [0, 1] quality score, or None on failure."""
+def compute_quality_components(file_path: str | Path) -> tuple[float, float, float] | None:
+    """Return (total_score, sharpness_score, exposure_score) or None on failure.
+
+    All three values are in [0, 1]; higher is better.
+    """
     try:
         from PIL import Image
         img = Image.open(file_path).convert("L")  # grayscale
-        # Downsample for speed; 512px is more than enough for Laplacian
         img.thumbnail((512, 512))
         arr = np.array(img, dtype=np.float32)
 
@@ -45,10 +47,17 @@ def compute_quality_score(file_path: str | Path) -> float | None:
         extreme = min((dark + bright) / _EXTREME_FRACTION_MAX, 1.0)
         exposure = 1.0 - extreme
 
-        return round(0.65 * sharpness + 0.35 * exposure, 4)
+        quality = round(0.65 * sharpness + 0.35 * exposure, 4)
+        return quality, round(sharpness, 4), round(exposure, 4)
     except Exception as exc:
         log.warning("Quality scoring failed for %s: %s", file_path, exc)
         return None
+
+
+def compute_quality_score(file_path: str | Path) -> float | None:
+    """Return a [0, 1] quality score, or None on failure."""
+    result = compute_quality_components(file_path)
+    return result[0] if result is not None else None
 
 
 def compute_quality_batch(catalog_path: Path | None = None) -> dict:

@@ -253,3 +253,95 @@ def get_photos_by_trip(trip_id: int, catalog_path: Path) -> list[dict]:
         (trip_id,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── GPS proximity clustering ──────────────────────────────────────────────────
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in kilometres between two GPS points."""
+    import math
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+        * math.sin(dlon / 2) ** 2
+    )
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+def cluster_by_gps_proximity(
+    catalog_path: Path | None = None,
+    radius_km: float = 0.5,
+) -> dict:
+    """Merge places that are within radius_km of each other.
+
+    Photos at the same landmark (< 500 m apart by default) are reassigned to
+    the most-populated place in their cluster, so they appear together even
+    when reverse-geocoding assigned them to different records.
+
+    Returns {"merges": N, "places_removed": M}.
+    """
+    conn = get_connection(catalog_path)
+    places = conn.execute(
+        "SELECT id, lat, lon FROM places WHERE lat IS NOT NULL AND lon IS NOT NULL"
+    ).fetchall()
+
+    # Count photos per place to pick the canonical representative
+    photo_counts: dict[int, int] = {}
+    for row in conn.execute(
+        "SELECT place_id, COUNT(*) AS c FROM photos WHERE place_id IS NOT NULL GROUP BY place_id"
+    ).fetchall():
+        photo_counts[row["place_id"]] = row["c"]
+
+    # Union-Find over place ids
+    parent: dict[int, int] = {p["id"]: p["id"] for p in places}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        # Keep the place with more photos as the root
+        ra, rb = find(a), find(b)
+        if ra == rb:
+            return
+        if photo_counts.get(ra, 0) >= photo_counts.get(rb, 0):
+            parent[rb] = ra
+        else:
+            parent[ra] = rb
+
+    place_list = list(places)
+    for i in range(len(place_list)):
+        for j in range(i + 1, len(place_list)):
+            p1, p2 = place_list[i], place_list[j]
+            if _haversine_km(p1["lat"], p1["lon"], p2["lat"], p2["lon"]) <= radius_km:
+                union(p1["id"], p2["id"])
+
+    # Collect merges: {canonical_id: [ids_to_reassign]}
+    groups: dict[int, list[int]] = {}
+    for p in place_list:
+        root = find(p["id"])
+        groups.setdefault(root, []).append(p["id"])
+
+    merges = 0
+    places_removed = 0
+    with CatalogWriter(catalog_path) as wconn:
+        for canonical, members in groups.items():
+            others = [m for m in members if m != canonical]
+            if not others:
+                continue
+            for old_id in others:
+                wconn.execute(
+                    "UPDATE photos SET place_id=? WHERE place_id=?",
+                    (canonical, old_id),
+                )
+                wconn.execute("DELETE FROM places WHERE id=?", (old_id,))
+                places_removed += 1
+            merges += 1
+
+    log.info("GPS proximity clustering: %d merges, %d places removed", merges, places_removed)
+    return {"merges": merges, "places_removed": places_removed}

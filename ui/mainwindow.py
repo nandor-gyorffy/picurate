@@ -212,6 +212,16 @@ class MainWindow(QMainWindow):
         writeback_act.triggered.connect(self._on_write_metadata)
         toolbar.addAction(writeback_act)
 
+        group_act = QAction("Group Similar", self)
+        group_act.setToolTip("Group similar/burst photos and suggest the best to keep")
+        group_act.triggered.connect(self._on_group_similar)
+        toolbar.addAction(group_act)
+
+        proximity_act = QAction("Merge Nearby Places", self)
+        proximity_act.setToolTip("Merge place records within 500 m of each other")
+        proximity_act.triggered.connect(self._on_merge_nearby_places)
+        toolbar.addAction(proximity_act)
+
         # ── Central three-pane splitter ───────────────────────────────
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(self._splitter)
@@ -461,6 +471,27 @@ class MainWindow(QMainWindow):
         self._status_label.setText(
             f"Write-back: {stats['written']} written, {stats['errors']} errors."
         )
+
+    def _on_group_similar(self) -> None:
+        from ui.groupview import GroupViewDialog
+        from core.query import get_photos
+        merged = self._merged_filter()
+        conn = __import__("core.db.catalog", fromlist=["get_connection"]).get_connection(self._catalog_path)
+        rows = get_photos(conn, limit=5000, **merged)
+        ids = [r["id"] for r in rows]
+        scope = repr(sorted(merged.items()))[:120]  # stable key from the active filter
+        dlg = GroupViewDialog(ids, self._catalog_path, scope=scope, parent=self)
+        dlg.collection_changed.connect(self._sidebar.refresh)
+        dlg.exec()
+
+    def _on_merge_nearby_places(self) -> None:
+        from core.places import cluster_by_gps_proximity
+        result = cluster_by_gps_proximity(self._catalog_path)
+        self._status_label.setText(
+            f"Places merged: {result['merges']} merge{'s' if result['merges'] != 1 else ''}, "
+            f"{result['places_removed']} place records removed."
+        )
+        self._sidebar.refresh()
 
     def _on_group_trips(self) -> None:
         from core.places import auto_group_trips

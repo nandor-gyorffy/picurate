@@ -63,8 +63,20 @@ def check_model_status() -> dict:
     }
 
 
+def _find_icon_png(app_dir: Path) -> Path | None:
+    """Return the 256x256 PNG icon path if it exists in the app directory."""
+    candidates = [
+        app_dir / "assets" / "icon" / "picurate.png",
+        app_dir / "assets" / "picurate.png",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
+
+
 def install_desktop_launcher(app_dir: Path | None = None) -> bool:
-    """Install a .desktop launcher for Linux (XDG).
+    """Install a .desktop launcher and icon for Linux (XDG hicolor theme).
 
     app_dir should be the directory containing main.py.
     Returns True on success, False if not on Linux or insufficient permissions.
@@ -77,18 +89,36 @@ def install_desktop_launcher(app_dir: Path | None = None) -> bool:
 
     python = shutil.which("python3") or shutil.which("python") or "python3"
     main_py = app_dir / "main.py"
-    icon = app_dir / "assets" / "picurate.png"
+
+    # Install icon into hicolor theme so the system sees it by name
+    icon_src = _find_icon_png(app_dir)
+    icon_name = "picurate"
+    if icon_src:
+        icon_dest = (
+            Path.home()
+            / ".local" / "share" / "icons" / "hicolor" / "256x256" / "apps"
+            / "picurate.png"
+        )
+        try:
+            icon_dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(icon_src), str(icon_dest))
+            icon_name = "picurate"  # name without path — system resolves it
+        except Exception:
+            icon_name = str(app_dir / "assets" / "icon" / "picurate.png")
+    else:
+        icon_name = str(app_dir / "assets" / "icon" / "picurate.png")
 
     desktop_content = f"""[Desktop Entry]
 Version=1.0
 Type=Application
 Name=Picurate
-Comment=Local photo organizer
-Exec={python} {main_py}
-Icon={icon}
+Comment=Organize and curate your photos
+Exec={python} {main_py} %U
+Icon={icon_name}
 Terminal=false
 Categories=Graphics;Photography;
 StartupWMClass=Picurate
+StartupNotify=true
 """
 
     dest = Path.home() / ".local" / "share" / "applications" / "picurate.desktop"
