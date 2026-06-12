@@ -127,6 +127,13 @@ MIGRATIONS: list[tuple[int, str]] = [
         value TEXT
     );
     """),
+    (2, """
+    ALTER TABLE photos ADD COLUMN caption TEXT;
+    ALTER TABLE photos ADD COLUMN keywords TEXT;
+
+    ALTER TABLE import_batches ADD COLUMN record_count INTEGER DEFAULT 0;
+    ALTER TABLE import_batches ADD COLUMN undo_data TEXT;
+    """),
 ]
 
 

@@ -78,7 +78,8 @@ class PropertiesPanel(QWidget):
         self._form.setSpacing(6)
 
         self._labels: dict[str, QLabel] = {}
-        for key in ("Filename", "Date", "Camera", "Dimensions", "File size", "GPS", "Status"):
+        for key in ("Filename", "Date", "Camera", "Dimensions", "File size", "GPS",
+                    "Status", "Caption", "Keywords"):
             val = QLabel("—")
             val.setWordWrap(True)
             val.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -106,3 +107,9 @@ class PropertiesPanel(QWidget):
         self._labels["File size"].setText(_fmt_size(row["file_size"]))
         self._labels["GPS"].setText(_fmt_gps(row["gps_lat"], row["gps_lon"]))
         self._labels["Status"].setText(str(row["status"]))
+        try:
+            self._labels["Caption"].setText(row["caption"] or "—")
+            kw = (row["keywords"] or "").replace(",", ", ").strip(" ,") or "—"
+            self._labels["Keywords"].setText(kw)
+        except (IndexError, KeyError):
+            pass

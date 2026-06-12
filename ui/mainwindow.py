@@ -157,6 +157,11 @@ class MainWindow(QMainWindow):
         export_act.triggered.connect(self._on_export)
         toolbar.addAction(export_act)
 
+        import_act = QAction("Import…", self)
+        import_act.setShortcut("Ctrl+I")
+        import_act.triggered.connect(self._on_import)
+        toolbar.addAction(import_act)
+
         # ── Central three-pane splitter ───────────────────────────────
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(self._splitter)
@@ -335,6 +340,13 @@ class MainWindow(QMainWindow):
     def _on_export(self) -> None:
         from ui.exportdialog import ExportDialog
         dlg = ExportDialog(self._catalog_path, parent=self)
+        dlg.exec()
+
+    def _on_import(self) -> None:
+        from ui.importdialog import ImportDialog
+        dlg = ImportDialog(self._catalog_path, parent=self)
+        dlg.import_done.connect(self._sidebar.refresh)
+        dlg.import_done.connect(lambda: self._grid.load_photos(self._merged_filter()))
         dlg.exec()
 
     # ------------------------------------------------------------------
