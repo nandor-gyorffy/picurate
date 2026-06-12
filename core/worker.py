@@ -74,6 +74,8 @@ class JobWorker(threading.Thread):
                 self._job_thumbnail(payload)
             elif job_type == "face_detect":
                 self._job_face_detect(payload)
+            elif job_type == "clip_tag":
+                self._job_clip_tag(payload)
             else:
                 log.warning("Unknown job type: %s", job_type)
             self._mark(job_id, "done")
@@ -138,3 +140,9 @@ class JobWorker(threading.Thread):
         row = conn.execute("SELECT file_path FROM photos WHERE id=?", (photo_id,)).fetchone()
         if row:
             process_photo_faces(photo_id, row["file_path"], self._catalog_path)
+
+    def _job_clip_tag(self, payload: dict) -> None:
+        from core.topics import tag_photo
+        photo_id = payload["photo_id"]
+        path = payload.get("path", "")
+        tag_photo(photo_id, path, self._catalog_path)

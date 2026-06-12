@@ -155,6 +155,10 @@ class ThumbnailGrid(QWidget):
             flag=self._filter.get("flag"),
             search=self._filter.get("search"),
             collection_id=self._filter.get("collection_id"),
+            place_id=self._filter.get("place_id"),
+            trip_id=self._filter.get("trip_id"),
+            person_id=self._filter.get("person_id"),
+            tag=self._filter.get("tag"),
         )
 
         n = len(rows)

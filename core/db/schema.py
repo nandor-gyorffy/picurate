@@ -134,6 +134,10 @@ MIGRATIONS: list[tuple[int, str]] = [
     ALTER TABLE import_batches ADD COLUMN record_count INTEGER DEFAULT 0;
     ALTER TABLE import_batches ADD COLUMN undo_data TEXT;
     """),
+    (3, """
+    ALTER TABLE photos ADD COLUMN clip_embedding TEXT;
+    CREATE INDEX IF NOT EXISTS photos_clip ON photos(id) WHERE clip_embedding IS NOT NULL;
+    """),
 ]
 
 

@@ -192,6 +192,11 @@ class MainWindow(QMainWindow):
         cluster_act.triggered.connect(self._on_cluster_faces)
         toolbar.addAction(cluster_act)
 
+        tag_act = QAction("Tag Topics", self)
+        tag_act.setToolTip("Enqueue CLIP topic tagging for all photos")
+        tag_act.triggered.connect(self._on_tag_topics)
+        toolbar.addAction(tag_act)
+
         # ── Central three-pane splitter ───────────────────────────────
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(self._splitter)
@@ -408,6 +413,12 @@ class MainWindow(QMainWindow):
             f"{stats['faces_assigned']} faces assigned."
         )
         self._sidebar.refresh()
+
+    def _on_tag_topics(self) -> None:
+        from core.topics import tag_photos_batch
+        stats = tag_photos_batch(self._catalog_path)
+        self._status_label.setText(f"Topics: {stats['enqueued']} jobs enqueued.")
+        self._worker.wake()
 
     def _on_group_trips(self) -> None:
         from core.places import auto_group_trips

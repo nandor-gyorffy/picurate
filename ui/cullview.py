@@ -284,6 +284,10 @@ class CullView(QWidget):
             flag=self._filter_ctx.get("flag"),
             search=self._filter_ctx.get("search"),
             collection_id=self._filter_ctx.get("collection_id"),
+            place_id=self._filter_ctx.get("place_id"),
+            trip_id=self._filter_ctx.get("trip_id"),
+            person_id=self._filter_ctx.get("person_id"),
+            tag=self._filter_ctx.get("tag"),
             limit=5000,
         )
         self._photo_ids = [r["id"] for r in rows]

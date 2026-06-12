@@ -22,6 +22,7 @@ def _build_where(
     collection_id: int | None,
     place_id: int | None,
     trip_id: int | None,
+    tag: str | None = None,
 ) -> tuple[str, list]:
     clauses: list[str] = ["p.status NOT IN ('missing', 'duplicate')"]
     params: list = []
@@ -50,6 +51,12 @@ def _build_where(
     if trip_id is not None:
         clauses.append("p.trip_id = ?")
         params.append(trip_id)
+    if tag is not None:
+        clauses.append(
+            "p.id IN (SELECT pt.photo_id FROM photo_tags pt "
+            "JOIN tags t ON t.id = pt.tag_id WHERE t.name = ?)"
+        )
+        params.append(tag)
 
     return " AND ".join(clauses), params
 
@@ -66,12 +73,13 @@ def get_photos(
     place_id: int | None = None,
     trip_id: int | None = None,
     person_id: int | None = None,
+    tag: str | None = None,
     limit: int = 2000,
     offset: int = 0,
 ) -> list[sqlite3.Row]:
     """Return photo rows matching all active filters, newest first."""
     where, params = _build_where(
-        folder, year, month, rating_min, flag, search, collection_id, place_id, trip_id
+        folder, year, month, rating_min, flag, search, collection_id, place_id, trip_id, tag
     )
 
     cols = ", ".join(f"p.{c.strip()}" for c in _PHOTO_COLS.split(","))
@@ -116,9 +124,10 @@ def count_photos(
     place_id: int | None = None,
     trip_id: int | None = None,
     person_id: int | None = None,
+    tag: str | None = None,
 ) -> int:
     where, params = _build_where(
-        folder, year, month, rating_min, flag, search, collection_id, place_id, trip_id
+        folder, year, month, rating_min, flag, search, collection_id, place_id, trip_id, tag
     )
     if person_id is not None:
         return conn.execute(
@@ -192,6 +201,7 @@ def get_adjacent_photo_ids(
     place_id: int | None = None,
     trip_id: int | None = None,
     person_id: int | None = None,
+    tag: str | None = None,
 ) -> tuple[int | None, int | None]:
     """Return (prev_id, next_id) within the current filter context."""
     rows = get_photos(
@@ -199,7 +209,7 @@ def get_adjacent_photo_ids(
         folder=folder, year=year, month=month,
         rating_min=rating_min, flag=flag, search=search,
         collection_id=collection_id, place_id=place_id, trip_id=trip_id,
-        person_id=person_id,
+        person_id=person_id, tag=tag,
         limit=10000,
     )
     ids = [r["id"] for r in rows]
