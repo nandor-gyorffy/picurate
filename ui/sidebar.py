@@ -24,6 +24,7 @@ from core.collections import (
     rename_collection,
 )
 from core.places import get_places_summary, get_trips
+from core.people import get_people
 
 _MONTH_NAMES = [
     "", "January", "February", "March", "April", "May", "June",
@@ -144,6 +145,20 @@ class SidebarWidget(QWidget):
         if year_node is not None:
             year_node.setText(0, f"{current_year}  ({year_total})")
             year_node.setData(0, _ROLE_FILTER, {"year": current_year})
+
+        # ── People ────────────────────────────────────────────────────
+        people = get_people(self._catalog_path)
+        if people:
+            people_root = QTreeWidgetItem(self._tree, ["People"])
+            people_root.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            people_root.setExpanded(True)
+            for person in people:
+                node = QTreeWidgetItem(
+                    people_root,
+                    [f"{person['name']}  ({person['photo_count']})"]
+                )
+                node.setData(0, _ROLE_FILTER, {"person_id": person["id"]})
+                node.setToolTip(0, person["name"])
 
         # ── Places ────────────────────────────────────────────────────
         places = get_places_summary(self._catalog_path)

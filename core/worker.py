@@ -72,6 +72,8 @@ class JobWorker(threading.Thread):
                 self._job_full_hash(payload)
             elif job_type == "thumbnail":
                 self._job_thumbnail(payload)
+            elif job_type == "face_detect":
+                self._job_face_detect(payload)
             else:
                 log.warning("Unknown job type: %s", job_type)
             self._mark(job_id, "done")
@@ -128,3 +130,11 @@ class JobWorker(threading.Thread):
                 )
             if self._result_queue is not None:
                 self._result_queue.put(("thumbnail", photo_id, str(thumb)))
+
+    def _job_face_detect(self, payload: dict) -> None:
+        from core.faces import process_photo_faces
+        photo_id = payload["photo_id"]
+        conn = get_connection(self._catalog_path)
+        row = conn.execute("SELECT file_path FROM photos WHERE id=?", (photo_id,)).fetchone()
+        if row:
+            process_photo_faces(photo_id, row["file_path"], self._catalog_path)

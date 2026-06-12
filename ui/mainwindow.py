@@ -182,6 +182,16 @@ class MainWindow(QMainWindow):
         trips_act.triggered.connect(self._on_group_trips)
         toolbar.addAction(trips_act)
 
+        faces_act = QAction("Detect Faces", self)
+        faces_act.setToolTip("Enqueue face detection for all photos")
+        faces_act.triggered.connect(self._on_detect_faces)
+        toolbar.addAction(faces_act)
+
+        cluster_act = QAction("Cluster Faces", self)
+        cluster_act.setToolTip("Group similar faces into people")
+        cluster_act.triggered.connect(self._on_cluster_faces)
+        toolbar.addAction(cluster_act)
+
         # ── Central three-pane splitter ───────────────────────────────
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(self._splitter)
@@ -383,6 +393,21 @@ class MainWindow(QMainWindow):
             )
             self._result_queue.put(("geocode_done", stats))
         threading.Thread(target=run, daemon=True).start()
+
+    def _on_detect_faces(self) -> None:
+        from core.faces import detect_faces_batch
+        stats = detect_faces_batch(self._catalog_path)
+        self._status_label.setText(f"Face detection: {stats['enqueued']} jobs enqueued.")
+        self._worker.wake()
+
+    def _on_cluster_faces(self) -> None:
+        from core.clustering import cluster_unassigned_faces
+        stats = cluster_unassigned_faces(self._catalog_path)
+        self._status_label.setText(
+            f"Clustering: {stats['people_created']} people created, "
+            f"{stats['faces_assigned']} faces assigned."
+        )
+        self._sidebar.refresh()
 
     def _on_group_trips(self) -> None:
         from core.places import auto_group_trips

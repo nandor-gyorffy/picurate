@@ -65,6 +65,7 @@ def get_photos(
     collection_id: int | None = None,
     place_id: int | None = None,
     trip_id: int | None = None,
+    person_id: int | None = None,
     limit: int = 2000,
     offset: int = 0,
 ) -> list[sqlite3.Row]:
@@ -74,6 +75,15 @@ def get_photos(
     )
 
     cols = ", ".join(f"p.{c.strip()}" for c in _PHOTO_COLS.split(","))
+
+    if person_id is not None:
+        sql = f"""SELECT DISTINCT {cols}
+                  FROM photos p
+                  JOIN faces f ON f.photo_id = p.id AND f.person_id = ?
+                  WHERE {where}
+                  ORDER BY p.date_taken DESC, p.filename
+                  LIMIT ? OFFSET ?"""
+        return conn.execute(sql, [person_id] + params + [limit, offset]).fetchall()
 
     if collection_id is not None:
         sql = f"""SELECT {cols}
@@ -105,10 +115,18 @@ def count_photos(
     collection_id: int | None = None,
     place_id: int | None = None,
     trip_id: int | None = None,
+    person_id: int | None = None,
 ) -> int:
     where, params = _build_where(
         folder, year, month, rating_min, flag, search, collection_id, place_id, trip_id
     )
+    if person_id is not None:
+        return conn.execute(
+            f"""SELECT COUNT(DISTINCT p.id) FROM photos p
+                JOIN faces f ON f.photo_id = p.id AND f.person_id = ?
+                WHERE {where}""",
+            [person_id] + params,
+        ).fetchone()[0]
     if collection_id is not None:
         return conn.execute(
             f"""SELECT COUNT(*) FROM photos p
@@ -173,6 +191,7 @@ def get_adjacent_photo_ids(
     collection_id: int | None = None,
     place_id: int | None = None,
     trip_id: int | None = None,
+    person_id: int | None = None,
 ) -> tuple[int | None, int | None]:
     """Return (prev_id, next_id) within the current filter context."""
     rows = get_photos(
@@ -180,6 +199,7 @@ def get_adjacent_photo_ids(
         folder=folder, year=year, month=month,
         rating_min=rating_min, flag=flag, search=search,
         collection_id=collection_id, place_id=place_id, trip_id=trip_id,
+        person_id=person_id,
         limit=10000,
     )
     ids = [r["id"] for r in rows]
