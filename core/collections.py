@@ -63,13 +63,15 @@ def remove_photo(
 
 
 def get_collections(catalog_path: Path | None = None) -> list[sqlite3.Row]:
-    """Return all collections with photo counts."""
+    """Return all collections with photo counts (excluding deleted/missing/duplicate photos)."""
     conn = get_connection(catalog_path)
     return conn.execute(
         """SELECT c.id, c.name, c.type,
-                  COUNT(cp.photo_id) AS photo_count
+                  COUNT(p.id) AS photo_count
            FROM collections c
            LEFT JOIN collection_photos cp ON cp.collection_id = c.id
+           LEFT JOIN photos p ON p.id = cp.photo_id
+               AND p.status NOT IN ('missing', 'duplicate', 'deleted')
            GROUP BY c.id
            ORDER BY c.name COLLATE NOCASE"""
     ).fetchall()

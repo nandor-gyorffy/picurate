@@ -153,7 +153,7 @@ def mark_missing(folder: Path, catalog_path: Path | None = None) -> int:
     with CatalogWriter(catalog_path) as conn:
         rows = conn.execute(
             "SELECT id, file_path FROM photos WHERE status='ok' AND file_path LIKE ?",
-            (str(folder) + "%",),
+            (str(folder).rstrip("/") + "/%",),
         ).fetchall()
         for row in rows:
             if not Path(row["file_path"]).exists():

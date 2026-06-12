@@ -15,7 +15,6 @@ import html
 import json
 import re
 import unicodedata
-from ftplib import all_errors
 from pathlib import Path
 from typing import Any
 

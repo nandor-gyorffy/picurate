@@ -24,7 +24,7 @@ from core.db.catalog import get_connection
 from core.logger import get_logger
 from core import metadata as _meta
 from core.collections import add_photo, get_collections
-from core.query import get_photos, get_adjacent_photo_ids, get_photo_by_id
+from core.query import get_photos, get_photo_by_id
 
 log = get_logger("picurate.cullview")
 
