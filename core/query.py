@@ -24,7 +24,7 @@ def _build_where(
     trip_id: int | None,
     tag: str | None = None,
 ) -> tuple[str, list]:
-    clauses: list[str] = ["p.status NOT IN ('missing', 'duplicate')"]
+    clauses: list[str] = ["p.status NOT IN ('missing', 'duplicate', 'deleted')"]
     params: list = []
 
     if folder:

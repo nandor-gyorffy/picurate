@@ -42,3 +42,42 @@ def get_flag(photo_id: int, catalog_path: Path | None = None) -> int:
     conn = get_connection(catalog_path)
     row = conn.execute("SELECT flag FROM photos WHERE id=?", (photo_id,)).fetchone()
     return row["flag"] if row else 0
+
+
+# ── Soft-delete / Trash ────────────────────────────────────────────────────────
+
+def soft_delete_photo(photo_id: int, catalog_path: Path | None = None) -> None:
+    """Mark a photo as deleted (soft-delete, non-destructive — file is not touched)."""
+    with CatalogWriter(catalog_path) as conn:
+        conn.execute("UPDATE photos SET status='deleted' WHERE id=?", (photo_id,))
+
+
+def restore_photo(photo_id: int, catalog_path: Path | None = None) -> None:
+    """Restore a soft-deleted photo back to 'ok' status."""
+    with CatalogWriter(catalog_path) as conn:
+        conn.execute(
+            "UPDATE photos SET status='ok' WHERE id=? AND status='deleted'", (photo_id,)
+        )
+
+
+def empty_trash(catalog_path: Path | None = None) -> int:
+    """Permanently remove all soft-deleted photo records from the catalog.
+
+    The original files are NOT touched.
+    Returns the number of records removed.
+    """
+    from core.db.catalog import get_connection
+    conn = get_connection(catalog_path)
+    count = conn.execute("SELECT COUNT(*) FROM photos WHERE status='deleted'").fetchone()[0]
+    with CatalogWriter(catalog_path) as wconn:
+        wconn.execute("DELETE FROM photos WHERE status='deleted'")
+    return count
+
+
+def get_trash(catalog_path: Path | None = None) -> list:
+    """Return all soft-deleted photo rows."""
+    from core.db.catalog import get_connection
+    conn = get_connection(catalog_path)
+    return conn.execute(
+        "SELECT id, filename, file_path FROM photos WHERE status='deleted'"
+    ).fetchall()

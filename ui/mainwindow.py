@@ -207,6 +207,11 @@ class MainWindow(QMainWindow):
         dupes_act.triggered.connect(self._on_find_near_dupes)
         toolbar.addAction(dupes_act)
 
+        writeback_act = QAction("Write Metadata", self)
+        writeback_act.setToolTip("Mirror ratings/captions/keywords back to file XMP (requires exiftool)")
+        writeback_act.triggered.connect(self._on_write_metadata)
+        toolbar.addAction(writeback_act)
+
         # ── Central three-pane splitter ───────────────────────────────
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(self._splitter)
@@ -445,6 +450,16 @@ class MainWindow(QMainWindow):
         groups = find_duplicate_groups(self._catalog_path)
         self._status_label.setText(
             f"Near-duplicates: {len(groups)} group{'s' if len(groups) != 1 else ''} found."
+        )
+
+    def _on_write_metadata(self) -> None:
+        from core.writeback import write_back_batch, exiftool_available
+        if not exiftool_available():
+            self._status_label.setText("exiftool not found — metadata write-back unavailable.")
+            return
+        stats = write_back_batch(self._catalog_path)
+        self._status_label.setText(
+            f"Write-back: {stats['written']} written, {stats['errors']} errors."
         )
 
     def _on_group_trips(self) -> None:
