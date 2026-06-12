@@ -197,6 +197,16 @@ class MainWindow(QMainWindow):
         tag_act.triggered.connect(self._on_tag_topics)
         toolbar.addAction(tag_act)
 
+        quality_act = QAction("Score Quality", self)
+        quality_act.setToolTip("Enqueue quality scoring for all photos")
+        quality_act.triggered.connect(self._on_score_quality)
+        toolbar.addAction(quality_act)
+
+        dupes_act = QAction("Find Near-Dupes", self)
+        dupes_act.setToolTip("Detect near-duplicate photos using perceptual hashing")
+        dupes_act.triggered.connect(self._on_find_near_dupes)
+        toolbar.addAction(dupes_act)
+
         # ── Central three-pane splitter ───────────────────────────────
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(self._splitter)
@@ -419,6 +429,23 @@ class MainWindow(QMainWindow):
         stats = tag_photos_batch(self._catalog_path)
         self._status_label.setText(f"Topics: {stats['enqueued']} jobs enqueued.")
         self._worker.wake()
+
+    def _on_score_quality(self) -> None:
+        from core.quality import compute_quality_batch
+        from core.duplicates import compute_phash_batch
+        qs = compute_quality_batch(self._catalog_path)
+        ps = compute_phash_batch(self._catalog_path)
+        self._status_label.setText(
+            f"Quality: {qs['enqueued']} jobs, pHash: {ps['enqueued']} jobs enqueued."
+        )
+        self._worker.wake()
+
+    def _on_find_near_dupes(self) -> None:
+        from core.duplicates import find_duplicate_groups
+        groups = find_duplicate_groups(self._catalog_path)
+        self._status_label.setText(
+            f"Near-duplicates: {len(groups)} group{'s' if len(groups) != 1 else ''} found."
+        )
 
     def _on_group_trips(self) -> None:
         from core.places import auto_group_trips

@@ -76,6 +76,10 @@ class JobWorker(threading.Thread):
                 self._job_face_detect(payload)
             elif job_type == "clip_tag":
                 self._job_clip_tag(payload)
+            elif job_type == "phash":
+                self._job_phash(payload)
+            elif job_type == "quality":
+                self._job_quality(payload)
             else:
                 log.warning("Unknown job type: %s", job_type)
             self._mark(job_id, "done")
@@ -146,3 +150,21 @@ class JobWorker(threading.Thread):
         photo_id = payload["photo_id"]
         path = payload.get("path", "")
         tag_photo(photo_id, path, self._catalog_path)
+
+    def _job_phash(self, payload: dict) -> None:
+        from core.duplicates import compute_phash
+        photo_id = payload["photo_id"]
+        path = payload.get("path", "")
+        h = compute_phash(path)
+        if h is not None:
+            with CatalogWriter(self._catalog_path) as conn:
+                conn.execute("UPDATE photos SET phash=? WHERE id=?", (h, photo_id))
+
+    def _job_quality(self, payload: dict) -> None:
+        from core.quality import compute_quality_score
+        photo_id = payload["photo_id"]
+        path = payload.get("path", "")
+        score = compute_quality_score(path)
+        if score is not None:
+            with CatalogWriter(self._catalog_path) as conn:
+                conn.execute("UPDATE photos SET quality_score=? WHERE id=?", (score, photo_id))
