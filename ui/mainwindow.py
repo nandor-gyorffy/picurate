@@ -102,6 +102,14 @@ class MainWindow(QMainWindow):
                 if event[0] == "thumbnail":
                     _, photo_id, thumb_path = event
                     self._grid.update_thumbnail(photo_id, thumb_path)
+                elif event[0] == "geocode_done":
+                    stats = event[1]
+                    self._progress.setVisible(False)
+                    self._status_label.setText(
+                        f"Geocode done — {stats['geocoded']} photos placed, "
+                        f"{stats['errors']} errors."
+                    )
+                    self._sidebar.refresh()
         except queue.Empty:
             pass
 
@@ -161,6 +169,18 @@ class MainWindow(QMainWindow):
         import_act.setShortcut("Ctrl+I")
         import_act.triggered.connect(self._on_import)
         toolbar.addAction(import_act)
+
+        toolbar.addSeparator()
+
+        geocode_act = QAction("Geocode GPS", self)
+        geocode_act.setToolTip("Reverse-geocode all GPS-tagged photos (offline)")
+        geocode_act.triggered.connect(self._on_geocode)
+        toolbar.addAction(geocode_act)
+
+        trips_act = QAction("Group Trips", self)
+        trips_act.setToolTip("Auto-group photos into trips by date gap")
+        trips_act.triggered.connect(self._on_group_trips)
+        toolbar.addAction(trips_act)
 
         # ── Central three-pane splitter ───────────────────────────────
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -348,6 +368,30 @@ class MainWindow(QMainWindow):
         dlg.import_done.connect(self._sidebar.refresh)
         dlg.import_done.connect(lambda: self._grid.load_photos(self._merged_filter()))
         dlg.exec()
+
+    def _on_geocode(self) -> None:
+        from core.places import geocode_photos
+        self._status_label.setText("Geocoding GPS photos…")
+        self._progress.setRange(0, 0)
+        self._progress.setVisible(True)
+
+        import threading
+        def run():
+            stats = geocode_photos(
+                self._catalog_path,
+                progress_cb=lambda d, t: None,
+            )
+            self._result_queue.put(("geocode_done", stats))
+        threading.Thread(target=run, daemon=True).start()
+
+    def _on_group_trips(self) -> None:
+        from core.places import auto_group_trips
+        stats = auto_group_trips(self._catalog_path)
+        self._status_label.setText(
+            f"Trips: {stats['trips_created']} created, "
+            f"{stats['photos_assigned']} photos assigned."
+        )
+        self._sidebar.refresh()
 
     # ------------------------------------------------------------------
     def closeEvent(self, event) -> None:

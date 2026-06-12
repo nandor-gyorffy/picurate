@@ -6,7 +6,8 @@ from pathlib import Path
 
 
 _PHOTO_COLS = """id, file_path, filename, date_taken, camera_make, camera_model,
-                 width, height, gps_lat, gps_lon, file_size, rating, flag, thumbnail_path"""
+                 width, height, gps_lat, gps_lon, file_size, rating, flag,
+                 thumbnail_path, caption, keywords, place_id, trip_id"""
 
 _PHOTO_COLS_WITH_STATUS = _PHOTO_COLS + ", status"
 
@@ -19,8 +20,9 @@ def _build_where(
     flag: int | None,
     search: str | None,
     collection_id: int | None,
+    place_id: int | None,
+    trip_id: int | None,
 ) -> tuple[str, list]:
-    """Build WHERE clause and params. Handles collection JOIN separately."""
     clauses: list[str] = ["p.status NOT IN ('missing', 'duplicate')"]
     params: list = []
 
@@ -42,6 +44,12 @@ def _build_where(
     if search:
         clauses.append("p.filename LIKE ?")
         params.append(f"%{search}%")
+    if place_id is not None:
+        clauses.append("p.place_id = ?")
+        params.append(place_id)
+    if trip_id is not None:
+        clauses.append("p.trip_id = ?")
+        params.append(trip_id)
 
     return " AND ".join(clauses), params
 
@@ -55,31 +63,27 @@ def get_photos(
     flag: int | None = None,
     search: str | None = None,
     collection_id: int | None = None,
+    place_id: int | None = None,
+    trip_id: int | None = None,
     limit: int = 2000,
     offset: int = 0,
 ) -> list[sqlite3.Row]:
     """Return photo rows matching all active filters, newest first."""
-    where, params = _build_where(folder, year, month, rating_min, flag, search, collection_id)
+    where, params = _build_where(
+        folder, year, month, rating_min, flag, search, collection_id, place_id, trip_id
+    )
+
+    cols = ", ".join(f"p.{c.strip()}" for c in _PHOTO_COLS.split(","))
 
     if collection_id is not None:
-        join = "JOIN collection_photos cp ON cp.photo_id = p.id AND cp.collection_id = ?"
-        params_pre = [collection_id]
-        sql = f"""SELECT {_PHOTO_COLS.replace('id,', 'p.id,').replace(', ', ', p.').lstrip()}
-                  FROM photos p {join}
-                  WHERE {where}
-                  ORDER BY p.date_taken DESC, p.filename
-                  LIMIT ? OFFSET ?"""
-        # Build proper column list for collection query
-        cols = ", ".join(f"p.{c.strip()}" for c in _PHOTO_COLS.split(","))
         sql = f"""SELECT {cols}
                   FROM photos p
                   JOIN collection_photos cp ON cp.photo_id = p.id AND cp.collection_id = ?
                   WHERE {where}
                   ORDER BY p.date_taken DESC, p.filename
                   LIMIT ? OFFSET ?"""
-        return conn.execute(sql, params_pre + params + [limit, offset]).fetchall()
+        return conn.execute(sql, [collection_id] + params + [limit, offset]).fetchall()
 
-    cols = ", ".join(f"p.{c.strip()}" for c in _PHOTO_COLS.split(","))
     return conn.execute(
         f"""SELECT {cols}
             FROM photos p
@@ -99,8 +103,12 @@ def count_photos(
     flag: int | None = None,
     search: str | None = None,
     collection_id: int | None = None,
+    place_id: int | None = None,
+    trip_id: int | None = None,
 ) -> int:
-    where, params = _build_where(folder, year, month, rating_min, flag, search, collection_id)
+    where, params = _build_where(
+        folder, year, month, rating_min, flag, search, collection_id, place_id, trip_id
+    )
     if collection_id is not None:
         return conn.execute(
             f"""SELECT COUNT(*) FROM photos p
@@ -163,13 +171,15 @@ def get_adjacent_photo_ids(
     flag: int | None = None,
     search: str | None = None,
     collection_id: int | None = None,
+    place_id: int | None = None,
+    trip_id: int | None = None,
 ) -> tuple[int | None, int | None]:
     """Return (prev_id, next_id) within the current filter context."""
     rows = get_photos(
         conn,
         folder=folder, year=year, month=month,
         rating_min=rating_min, flag=flag, search=search,
-        collection_id=collection_id,
+        collection_id=collection_id, place_id=place_id, trip_id=trip_id,
         limit=10000,
     )
     ids = [r["id"] for r in rows]

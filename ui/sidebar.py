@@ -23,6 +23,7 @@ from core.collections import (
     get_collections,
     rename_collection,
 )
+from core.places import get_places_summary, get_trips
 
 _MONTH_NAMES = [
     "", "January", "February", "March", "April", "May", "June",
@@ -143,6 +144,30 @@ class SidebarWidget(QWidget):
         if year_node is not None:
             year_node.setText(0, f"{current_year}  ({year_total})")
             year_node.setData(0, _ROLE_FILTER, {"year": current_year})
+
+        # ── Places ────────────────────────────────────────────────────
+        places = get_places_summary(self._catalog_path)
+        if places:
+            places_root = QTreeWidgetItem(self._tree, ["Places"])
+            places_root.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            places_root.setExpanded(True)
+            for pl in places:
+                label = pl["city"] or pl["region"] or pl["country"] or f"Place {pl['id']}"
+                if pl["region"] and pl["city"]:
+                    label = f"{pl['city']}, {pl['region']}"
+                node = QTreeWidgetItem(places_root, [f"{label}  ({pl['photo_count']})"])
+                node.setData(0, _ROLE_FILTER, {"place_id": pl["id"]})
+                node.setToolTip(0, f"{pl['city']}, {pl['region']}, {pl['country']}")
+
+        # ── Trips ─────────────────────────────────────────────────────
+        trips = get_trips(self._catalog_path)
+        if trips:
+            trips_root = QTreeWidgetItem(self._tree, ["Trips"])
+            trips_root.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            trips_root.setExpanded(True)
+            for trip in trips:
+                node = QTreeWidgetItem(trips_root, [f"{trip['name']}  ({trip['photo_count']})"])
+                node.setData(0, _ROLE_FILTER, {"trip_id": trip["id"]})
 
         self._tree.blockSignals(False)
         self._tree.setCurrentItem(all_item)
