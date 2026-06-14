@@ -20,13 +20,69 @@ def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.dot(a, b) / (na * nb))
 
 
+def _cluster_embeddings(
+    embeddings: list[np.ndarray],
+    threshold: float,
+) -> list[list[int]]:
+    """
+    Cluster face embeddings using scipy agglomerative average-linkage.
+    Falls back to union-find (single-linkage) if scipy is unavailable.
+
+    Returns list of groups (each group is a list of indices into *embeddings*).
+    Average linkage prevents "bridging": two different people can only be merged
+    if the average distance between all pairs across both groups is below the
+    threshold, not just a single borderline pair.
+    """
+    n = len(embeddings)
+    if n == 1:
+        return [[0]]
+
+    try:
+        from scipy.cluster.hierarchy import linkage, fcluster
+        from scipy.spatial.distance import squareform
+
+        # Build cosine distance matrix: distance = 1 - cosine_similarity
+        dist_matrix = np.zeros((n, n), dtype=np.float64)
+        for i in range(n):
+            for j in range(i + 1, n):
+                sim = _cosine_similarity(embeddings[i], embeddings[j])
+                dist_matrix[i, j] = 1.0 - sim
+                dist_matrix[j, i] = 1.0 - sim
+
+        condensed = squareform(dist_matrix, checks=False)
+        Z = linkage(condensed, method="average")
+        # fcluster with criterion='distance' and t = 1 - threshold:
+        # faces within distance (1 - threshold) of each other's cluster average are merged
+        labels = fcluster(Z, t=1.0 - threshold, criterion="distance")
+
+        groups: dict[int, list[int]] = {}
+        for idx, label in enumerate(labels):
+            groups.setdefault(int(label), []).append(idx)
+        log.debug("scipy average-linkage: %d faces → %d clusters", n, len(groups))
+        return list(groups.values())
+
+    except ImportError:
+        log.warning("scipy not available — falling back to union-find (single-linkage) clustering")
+        return _connected_components_fallback(embeddings, threshold)
+
+
 def _connected_components(
     embeddings: list[np.ndarray],
     threshold: float,
 ) -> list[list[int]]:
     """
-    Simple union-find clustering: merge faces whose cosine similarity ≥ threshold.
-    Returns list of groups (each group is a list of indices into *embeddings*).
+    Union-find (single-linkage) clustering — kept as public alias for backwards
+    compatibility (test_stage7 imports it by name) and as the scipy fallback.
+    """
+    return _connected_components_fallback(embeddings, threshold)
+
+
+def _connected_components_fallback(
+    embeddings: list[np.ndarray],
+    threshold: float,
+) -> list[list[int]]:
+    """
+    Fallback union-find (single-linkage) clustering when scipy is unavailable.
     """
     n = len(embeddings)
     parent = list(range(n))
@@ -57,19 +113,25 @@ def _connected_components(
 
 def cluster_unassigned_faces(
     catalog_path: Path,
-    threshold: float = 0.45,
+    threshold: float | None = None,
     min_group_size: int = 1,
 ) -> dict:
     """
     Cluster all faces with no person_id assignment.
 
     - Groups are merged if cosine similarity of ArcFace embeddings ≥ threshold.
+    - Uses scipy average-linkage (falls back to union-find if scipy unavailable).
     - Each new group becomes an unnamed person ("Person 1", "Person 2", …).
     - Already-named people are used for matching: if an unassigned face is close
       enough to a named person's centroid it is assigned to them.
+    - Calls cleanup_empty_persons() after creating persons to remove orphan shells.
 
     Returns stats: {faces_loaded, groups_found, people_created, faces_assigned}.
     """
+    if threshold is None:
+        from core import settings as _s
+        threshold = float(_s.get("face_cluster_threshold", catalog_path) or 0.42)
+
     conn = get_connection(catalog_path)
 
     # Load unassigned faces that have an embedding
@@ -100,17 +162,17 @@ def cluster_unassigned_faces(
            WHERE f.embedding IS NOT NULL"""
     ).fetchall()
 
-    person_centroids: dict[int, np.ndarray] = {}
+    person_emb_lists: dict[int, list[np.ndarray]] = {}
     for named_row in named:
         pid = named_row["id"]
         try:
             emb = np.array(json.loads(named_row["embedding"]), dtype=np.float32)
-            if pid not in person_centroids:
-                person_centroids[pid] = emb
-            else:
-                person_centroids[pid] = (person_centroids[pid] + emb) / 2.0
+            person_emb_lists.setdefault(pid, []).append(emb)
         except Exception:
             pass
+    person_centroids: dict[int, np.ndarray] = {
+        pid: np.mean(embs, axis=0) for pid, embs in person_emb_lists.items()
+    }
 
     pre_assigned: dict[int, int] = {}  # face_id → person_id (matched to named)
     remaining_indices: list[int] = []
@@ -131,7 +193,7 @@ def cluster_unassigned_faces(
     rem_embeddings = [embeddings[i] for i in remaining_indices]
     rem_face_ids   = [face_ids[i]   for i in remaining_indices]
 
-    groups = _connected_components(rem_embeddings, threshold) if rem_embeddings else []
+    groups = _cluster_embeddings(rem_embeddings, threshold) if rem_embeddings else []
 
     meaningful = [g for g in groups if len(g) >= min_group_size]
 
@@ -160,6 +222,10 @@ def cluster_unassigned_faces(
                 )
             people_created += 1
             faces_assigned += len(group)
+
+    # Clean up orphan person shells (persons with no faces left)
+    from core.people import cleanup_empty_persons
+    cleanup_empty_persons(catalog_path)
 
     return {
         "faces_loaded": len(face_ids),

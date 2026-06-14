@@ -42,6 +42,18 @@ def main() -> int:
         _show_crash_dialog(exc)
         return 1
 
+    # Restore saved font size before opening the window
+    try:
+        from core import settings as _s
+        saved_font_size = _s.get("font_size", cp)
+        if saved_font_size:
+            from PySide6.QtGui import QFont
+            f = app.font()
+            f.setPointSize(int(saved_font_size))
+            app.setFont(f)
+    except Exception:
+        pass
+
     try:
         from ui.mainwindow import MainWindow
         win = MainWindow(cp)

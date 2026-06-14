@@ -24,7 +24,7 @@ from core.collections import (
     rename_collection,
 )
 from core.places import get_places_summary, get_trips
-from core.people import get_people
+from core.people import get_people, rename_person, delete_person, merge_people
 from core.tags import get_tags
 
 _MONTH_NAMES = [
@@ -34,6 +34,7 @@ _MONTH_NAMES = [
 
 _ROLE_FILTER = Qt.UserRole
 _ROLE_COLLECTION_ID = Qt.UserRole + 1
+_ROLE_PERSON_ID = Qt.UserRole + 2
 
 
 class SidebarWidget(QWidget):
@@ -173,6 +174,7 @@ class SidebarWidget(QWidget):
                     [f"{person['name']}  ({person['photo_count']})"]
                 )
                 node.setData(0, _ROLE_FILTER, {"person_id": person["id"]})
+                node.setData(0, _ROLE_PERSON_ID, person["id"])
                 node.setToolTip(0, person["name"])
 
         # ── Places ────────────────────────────────────────────────────
@@ -242,9 +244,29 @@ class SidebarWidget(QWidget):
         item = self._tree.itemAt(pos)
         if item is None:
             return
+
+        # ── Person node ────────────────────────────────────────────────
+        pid = item.data(0, _ROLE_PERSON_ID)
+        if pid is not None:
+            menu = QMenu(self)
+            menu.addAction("Review faces…", lambda: self._review_person(pid, item))
+            menu.addAction("Rename person…", lambda: self._rename_person(pid, item))
+            menu.addAction("Merge into another person…", lambda: self._merge_person(pid, item))
+            menu.addSeparator()
+            menu.addAction("Delete person (keep faces)", lambda: self._delete_person(pid))
+            menu.exec(self._tree.viewport().mapToGlobal(pos))
+            return
+
+        # ── People root node ───────────────────────────────────────────
+        if item.text(0) == "People":
+            menu = QMenu(self)
+            menu.addAction("Clean up empty persons", self._cleanup_empty_persons)
+            menu.exec(self._tree.viewport().mapToGlobal(pos))
+            return
+
+        # ── Collection node ────────────────────────────────────────────
         cid = item.data(0, _ROLE_COLLECTION_ID)
         if cid is None:
-            # Right-click on Collections root → offer "New collection"
             parent = item.parent()
             if item.text(0) == "Collections" or (parent and parent.text(0) == "Collections" and cid is None):
                 menu = QMenu(self)
@@ -286,5 +308,68 @@ class SidebarWidget(QWidget):
         )
         if r == QMessageBox.StandardButton.Yes:
             delete_collection(cid, self._catalog_path)
+            self.refresh()
+            self.filter_changed.emit({})
+
+    # ── Person actions ─────────────────────────────────────────────────
+    def _review_person(self, pid: int, item: QTreeWidgetItem) -> None:
+        from ui.face_review import FaceReviewDialog
+        person_name = item.text(0).split("  (")[0]
+        dlg = FaceReviewDialog(pid, person_name, self._catalog_path, self)
+        dlg.people_changed.connect(self.refresh)
+        dlg.exec()
+
+    def _cleanup_empty_persons(self) -> None:
+        from core.people import cleanup_empty_persons
+        cleanup_empty_persons(self._catalog_path)
+        self.refresh()
+        self.filter_changed.emit({})
+
+    def _rename_person(self, pid: int, item: QTreeWidgetItem) -> None:
+        current_text = item.text(0).split("  (")[0]
+        name, ok = QInputDialog.getText(self, "Rename Person", "Name:", text=current_text)
+        if ok and name.strip():
+            rename_person(pid, name.strip(), self._catalog_path)
+            self.refresh()
+
+    def _merge_person(self, source_pid: int, item: QTreeWidgetItem) -> None:
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QListWidget, QListWidgetItem, QVBoxLayout
+        people = get_people(self._catalog_path)
+        others = [p for p in people if p["id"] != source_pid]
+        if not others:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "Merge Person", "No other people to merge into.")
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Merge into…")
+        dlg.setMinimumWidth(280)
+        layout = QVBoxLayout(dlg)
+        lst = QListWidget()
+        for p in others:
+            li = QListWidgetItem(f"{p['name']}  ({p['photo_count']} photos)")
+            li.setData(Qt.ItemDataRole.UserRole, p["id"])
+            lst.addItem(li)
+        layout.addWidget(lst)
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
+
+        if dlg.exec() and lst.currentItem():
+            target_pid = lst.currentItem().data(Qt.ItemDataRole.UserRole)
+            merge_people(source_pid, target_pid, self._catalog_path)
+            self.refresh()
+            self.filter_changed.emit({})
+
+    def _delete_person(self, pid: int) -> None:
+        from PySide6.QtWidgets import QMessageBox
+        r = QMessageBox.question(
+            self, "Delete Person",
+            "Remove this person? Their faces stay in the database but will be unassigned.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if r == QMessageBox.StandardButton.Yes:
+            delete_person(pid, self._catalog_path)
             self.refresh()
             self.filter_changed.emit({})

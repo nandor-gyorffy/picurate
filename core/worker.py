@@ -139,10 +139,24 @@ class JobWorker(threading.Thread):
 
     def _job_face_detect(self, payload: dict) -> None:
         from core.faces import process_photo_faces
+        from core.db.catalog import CatalogWriter
         photo_id = payload["photo_id"]
+        force = payload.get("force", False)
         conn = get_connection(self._catalog_path)
         row = conn.execute("SELECT file_path FROM photos WHERE id=?", (photo_id,)).fetchone()
         if row:
+            if force:
+                # Remove only tiny / poor-quality faces before re-detecting
+                with CatalogWriter(self._catalog_path) as wc:
+                    wc.execute("""
+                        DELETE FROM faces
+                        WHERE photo_id = ? AND source = 'insightface'
+                          AND (
+                              bounding_box IS NULL OR
+                              (CAST(json_extract(bounding_box,'$[2]') AS REAL)
+                               - CAST(json_extract(bounding_box,'$[0]') AS REAL)) < 60
+                          )
+                    """, (photo_id,))
             process_photo_faces(photo_id, row["file_path"], self._catalog_path)
 
     def _job_clip_tag(self, payload: dict) -> None:

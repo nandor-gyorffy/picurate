@@ -149,6 +149,19 @@ class MainWindow(QMainWindow):
         toolbar.addAction(props_act)
         self._props_action = props_act
 
+        filterbar_act = QAction("Filter Bar", self)
+        filterbar_act.setCheckable(True)
+        filterbar_act.setChecked(True)
+        filterbar_act.setShortcut("Ctrl+F")
+        filterbar_act.triggered.connect(self._toggle_filterbar)
+        toolbar.addAction(filterbar_act)
+        self._filterbar_action = filterbar_act
+
+        settings_act = QAction("Settings…", self)
+        settings_act.setShortcut("Ctrl+,")
+        settings_act.triggered.connect(self._on_settings)
+        toolbar.addAction(settings_act)
+
         toolbar.addSeparator()
 
         cull_act = QAction("Cull Mode", self)
@@ -183,14 +196,24 @@ class MainWindow(QMainWindow):
         toolbar.addAction(trips_act)
 
         faces_act = QAction("Detect Faces", self)
-        faces_act.setToolTip("Enqueue face detection for all photos")
+        faces_act.setToolTip("Enqueue face detection for all photos without face data")
         faces_act.triggered.connect(self._on_detect_faces)
         toolbar.addAction(faces_act)
+
+        redetect_act = QAction("Re-detect Faces", self)
+        redetect_act.setToolTip("Force re-detection on photos with only tiny/poor faces (< 60 px)")
+        redetect_act.triggered.connect(self._on_redetect_faces)
+        toolbar.addAction(redetect_act)
 
         cluster_act = QAction("Cluster Faces", self)
         cluster_act.setToolTip("Group similar faces into people")
         cluster_act.triggered.connect(self._on_cluster_faces)
         toolbar.addAction(cluster_act)
+
+        recluster_act = QAction("Re-cluster Faces", self)
+        recluster_act.setToolTip("Reset auto-named persons and re-cluster all faces from scratch")
+        recluster_act.triggered.connect(self._on_recluster_faces)
+        toolbar.addAction(recluster_act)
 
         tag_act = QAction("Tag Topics", self)
         tag_act.setToolTip("Enqueue CLIP topic tagging for all photos")
@@ -276,6 +299,9 @@ class MainWindow(QMainWindow):
     def _toggle_props(self, checked: bool) -> None:
         self._props.setVisible(checked)
 
+    def _toggle_filterbar(self, checked: bool) -> None:
+        self._filterbar.setVisible(checked)
+
     def _toggle_cull_mode(self, checked: bool) -> None:
         from ui.cullview import CullView
         if checked:
@@ -298,7 +324,8 @@ class MainWindow(QMainWindow):
                 self._center.layout().removeWidget(self._cull_view)
                 self._cull_view.deleteLater()
                 self._cull_view = None
-            self._filterbar.setVisible(True)
+            show_fb = self._filterbar_action.isChecked()
+            self._filterbar.setVisible(show_fb)
             self._grid.setVisible(True)
 
     # ------------------------------------------------------------------
@@ -430,12 +457,60 @@ class MainWindow(QMainWindow):
         self._status_label.setText(f"Face detection: {stats['enqueued']} jobs enqueued.")
         self._worker.wake()
 
+    def _on_redetect_faces(self) -> None:
+        from core.faces import detect_faces_batch
+        from PySide6.QtWidgets import QMessageBox
+        r = QMessageBox.question(
+            self, "Re-detect Faces",
+            "This will re-run face detection on photos that only have tiny/distant faces "
+            "(< 60 px). Small existing face records will be removed and replaced.\n\n"
+            "Named person assignments for LARGE faces are kept. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if r == QMessageBox.StandardButton.Yes:
+            stats = detect_faces_batch(self._catalog_path, force_redetect=True)
+            self._status_label.setText(f"Re-detect: {stats['enqueued']} photos re-queued.")
+            self._worker.wake()
+
     def _on_cluster_faces(self) -> None:
         from core.clustering import cluster_unassigned_faces
+        from core.people import cleanup_empty_persons
         stats = cluster_unassigned_faces(self._catalog_path)
+        cleaned = cleanup_empty_persons(self._catalog_path)
         self._status_label.setText(
             f"Clustering: {stats['people_created']} people created, "
-            f"{stats['faces_assigned']} faces assigned."
+            f"{stats['faces_assigned']} faces assigned. "
+            f"{cleaned} empty persons removed."
+        )
+        self._sidebar.refresh()
+
+    def _on_recluster_faces(self) -> None:
+        from core.db.catalog import CatalogWriter, get_connection
+        from core.clustering import cluster_unassigned_faces
+        from core.people import cleanup_empty_persons
+
+        # Unassign faces from auto-named persons (name matches 'Person <digits>')
+        conn = get_connection(self._catalog_path)
+        auto_persons = conn.execute(
+            "SELECT id FROM people WHERE name GLOB 'Person [0-9]*'"
+        ).fetchall()
+        if auto_persons:
+            ids = [r["id"] for r in auto_persons]
+            with CatalogWriter(self._catalog_path) as wc:
+                wc.execute(
+                    f"UPDATE faces SET person_id=NULL WHERE person_id IN ({','.join('?'*len(ids))})",
+                    ids
+                )
+                wc.execute(
+                    f"DELETE FROM people WHERE id IN ({','.join('?'*len(ids))})",
+                    ids
+                )
+
+        stats = cluster_unassigned_faces(self._catalog_path)
+        cleaned = cleanup_empty_persons(self._catalog_path)
+        self._status_label.setText(
+            f"Re-clustered: {stats['people_created']} people, {stats['faces_assigned']} faces. "
+            f"{cleaned} orphans removed."
         )
         self._sidebar.refresh()
 
@@ -501,6 +576,11 @@ class MainWindow(QMainWindow):
             f"{stats['photos_assigned']} photos assigned."
         )
         self._sidebar.refresh()
+
+    def _on_settings(self) -> None:
+        from ui.settings_dialog import SettingsDialog
+        dlg = SettingsDialog(self)
+        dlg.exec()
 
     # ------------------------------------------------------------------
     def closeEvent(self, event) -> None:

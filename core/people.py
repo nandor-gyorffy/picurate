@@ -12,17 +12,18 @@ log = get_logger("picurate.people")
 def get_people(catalog_path: Path) -> list[dict]:
     """
     Return [{id, name, face_count, photo_count}] ordered by name.
-    photo_count = distinct photos that have at least one face attributed to this person.
+    face_count  = total face records assigned to this person.
+    photo_count = distinct photos with status='ok' that have a face for this person.
     """
     conn = get_connection(catalog_path)
     rows = conn.execute("""
         SELECT p.id, p.name,
-               COUNT(f.id) AS face_count,
-               COUNT(DISTINCT f.photo_id) AS photo_count
+               COUNT(DISTINCT f.id) AS face_count,
+               COUNT(DISTINCT CASE WHEN ph.status = 'ok' THEN ph.id END) AS photo_count
         FROM people p
         LEFT JOIN faces f ON f.person_id = p.id
-        GROUP BY p.id
-        ORDER BY p.name COLLATE NOCASE
+        LEFT JOIN photos ph ON ph.id = f.photo_id
+        GROUP BY p.id ORDER BY p.name COLLATE NOCASE
     """).fetchall()
     return [dict(r) for r in rows]
 
@@ -74,6 +75,21 @@ def get_photos_by_person(person_id: int, catalog_path: Path) -> list[dict]:
         (person_id,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def cleanup_empty_persons(catalog_path: Path) -> int:
+    """
+    Delete person records that have no faces assigned.
+    Returns the number of persons deleted.
+    """
+    with CatalogWriter(catalog_path) as conn:
+        result = conn.execute("""
+            DELETE FROM people
+            WHERE id NOT IN (
+                SELECT DISTINCT person_id FROM faces WHERE person_id IS NOT NULL
+            )
+        """)
+        return result.rowcount
 
 
 def get_unassigned_face_count(catalog_path: Path) -> int:

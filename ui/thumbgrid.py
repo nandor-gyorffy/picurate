@@ -5,8 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QSize, QTimer, Signal, QRect, QPoint
 from PySide6.QtGui import (
-    QColor, QFont, QIcon, QPainter, QPen, QPixmap, QStyledItemDelegate,
-    QStyleOptionViewItem,
+    QColor, QFont, QIcon, QPainter, QPen, QPixmap,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -17,6 +16,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QSlider,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QVBoxLayout,
     QWidget,
 )
@@ -178,7 +179,7 @@ class ThumbnailGrid(QWidget):
             item.setData(_ROLE_RATE,  row["rating"] or 0)
             item.setData(_ROLE_FLAG,  row["flag"] or 0)
             item.setToolTip(row["filename"] or "")
-            item.setSizeHint(QSize(self._thumb_size + 8, self._thumb_size + 24))
+            item.setSizeHint(QSize(self._thumb_size + 8, self._thumb_size + 28))
             self._list.addItem(item)
             self._item_map[row["id"]] = item
             if row["thumbnail_path"] and Path(row["thumbnail_path"]).exists():
@@ -217,7 +218,7 @@ class ThumbnailGrid(QWidget):
     # ------------------------------------------------------------------
     def _apply_icon_size(self, size: int) -> None:
         self._list.setIconSize(QSize(size, size))
-        self._list.setGridSize(QSize(size + 8, size + 24))
+        self._list.setGridSize(QSize(size + 8, size + 28))
 
     def _load_pixmap_batch(self) -> None:
         BATCH = 30
@@ -240,6 +241,9 @@ class ThumbnailGrid(QWidget):
     def _on_size_changed(self, value: int) -> None:
         self._thumb_size = value
         self._apply_icon_size(value)
+        hint = QSize(value + 8, value + 28)
+        for item in self._item_map.values():
+            item.setSizeHint(hint)
         self._pending = [
             item for item in self._item_map.values()
             if item.data(_ROLE_THUMB) and Path(str(item.data(_ROLE_THUMB))).exists()
