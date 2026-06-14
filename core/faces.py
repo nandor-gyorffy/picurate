@@ -144,6 +144,12 @@ def assign_person(face_id: int, person_id: int | None, catalog_path: Path) -> No
         conn.execute("UPDATE faces SET person_id=? WHERE id=?", (person_id, face_id))
 
 
+def delete_face(face_id: int, catalog_path: Path) -> None:
+    """Permanently delete a face record (e.g. a false positive detection)."""
+    with CatalogWriter(catalog_path) as conn:
+        conn.execute("DELETE FROM faces WHERE id=?", (face_id,))
+
+
 def get_face_crop_pixmap(face_id: int, catalog_path: Path, size: int = 96):
     """
     Return a QPixmap of the cropped face region (with 40% padding), scaled to size×size.

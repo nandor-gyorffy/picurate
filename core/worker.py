@@ -86,6 +86,8 @@ class JobWorker(threading.Thread):
         except Exception as exc:
             log.warning("Job %s (%s) failed: %s", job_id, job_type, exc)
             self._mark(job_id, "error")
+            if self._result_queue is not None:
+                self._result_queue.put(("job_error", job_id, job_type))
 
     def _mark(self, job_id: int, status: str) -> None:
         with CatalogWriter(self._catalog_path) as conn:

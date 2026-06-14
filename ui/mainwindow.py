@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import queue
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, QObject
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QProgressBar,
     QSplitter,
     QStatusBar,
@@ -69,11 +72,15 @@ class MainWindow(QMainWindow):
         self._loupe = None
         self._cull_view = None
         self._in_cull_mode = False
+        self._job_error_count = 0
 
         self._setup_catalog()
+        self._create_actions()
         self._build_ui()
+        self._build_menubar()
         self._start_worker()
         self._start_result_poll()
+        self._install_exception_hook()
 
     # ------------------------------------------------------------------
     def _setup_catalog(self) -> None:
@@ -82,6 +89,144 @@ class MainWindow(QMainWindow):
             restore_latest_backup(self._catalog_path)
         open_catalog(self._catalog_path)
 
+    def _install_exception_hook(self) -> None:
+        """Show a dialog for uncaught exceptions instead of silently crashing."""
+        _orig = sys.excepthook
+
+        def _hook(exc_type, exc_value, exc_tb):
+            try:
+                import traceback
+                msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+                dlg = QMessageBox(self)
+                dlg.setWindowTitle("Unexpected Error")
+                dlg.setIcon(QMessageBox.Icon.Critical)
+                dlg.setText(f"An unexpected error occurred:\n\n{exc_value}")
+                dlg.setDetailedText(msg)
+                dlg.exec()
+            except Exception:
+                pass
+            _orig(exc_type, exc_value, exc_tb)
+
+        sys.excepthook = _hook
+
+    def _create_actions(self) -> None:
+        """Create all QActions (shared between menu bar and toolbar)."""
+        def _act(label, shortcut=None, checkable=False, checked=False, tip=None):
+            a = QAction(label, self)
+            if shortcut:
+                a.setShortcut(QKeySequence(shortcut))
+            if checkable:
+                a.setCheckable(True)
+                a.setChecked(checked)
+            if tip:
+                a.setToolTip(tip)
+            return a
+
+        # File
+        self._act_open        = _act("Open Folder…",    "Ctrl+O")
+        self._act_rescan      = _act("Rescan",           "F5")
+        self._act_settings    = _act("Settings…",        "Ctrl+,")
+        self._act_quit        = _act("Quit",             "Ctrl+Q")
+        # View (panel toggles)
+        self._act_sidebar     = _act("Sidebar",          checkable=True, checked=True)
+        self._act_props       = _act("Properties Panel", checkable=True, checked=True)
+        self._act_filterbar   = _act("Filter Bar",       "Ctrl+F", checkable=True, checked=True)
+        self._act_cull        = _act("Cull Mode",        "Ctrl+K", checkable=True)
+        self._act_group_sim   = _act("Group Similar…")
+        # Export / Import
+        self._act_export      = _act("Export…",          "Ctrl+E")
+        self._act_import      = _act("Import…",          "Ctrl+I")
+        # Faces
+        self._act_detect      = _act("Detect Faces",     tip="Enqueue face detection for new photos")
+        self._act_redetect    = _act("Re-detect Faces",  tip="Force re-detection on photos with only tiny faces")
+        self._act_cluster     = _act("Cluster Faces",    tip="Group similar faces into people")
+        self._act_recluster   = _act("Re-cluster Faces", tip="Reset auto-named persons and re-cluster from scratch")
+        self._act_unassigned  = _act("Unassigned Faces…",tip="Review and assign faces not yet linked to a person")
+        self._act_writeback   = _act("Write Metadata",   tip="Mirror ratings/captions/keywords to XMP (requires exiftool)")
+        # Places
+        self._act_geocode     = _act("Geocode GPS",      tip="Reverse-geocode all GPS-tagged photos (offline)")
+        self._act_trips       = _act("Group Trips",      tip="Auto-group photos into trips by date gap")
+        self._act_merge_pl    = _act("Merge Nearby Places", tip="Merge place records within 500 m of each other")
+        # Library
+        self._act_tag         = _act("Tag Topics",       tip="Enqueue CLIP topic tagging for all photos")
+        self._act_quality     = _act("Score Quality",    tip="Enqueue quality scoring for all photos")
+        self._act_dupes       = _act("Find Near-Dupes",  tip="Detect near-duplicate photos using perceptual hashing")
+
+        # Connect signals
+        self._act_open.triggered.connect(self._on_open_folder)
+        self._act_rescan.triggered.connect(self._on_rescan)
+        self._act_settings.triggered.connect(self._on_settings)
+        self._act_quit.triggered.connect(QApplication.quit)
+        self._act_sidebar.triggered.connect(self._toggle_sidebar)
+        self._act_props.triggered.connect(self._toggle_props)
+        self._act_filterbar.triggered.connect(self._toggle_filterbar)
+        self._act_cull.triggered.connect(self._toggle_cull_mode)
+        self._act_group_sim.triggered.connect(self._on_group_similar)
+        self._act_export.triggered.connect(self._on_export)
+        self._act_import.triggered.connect(self._on_import)
+        self._act_detect.triggered.connect(self._on_detect_faces)
+        self._act_redetect.triggered.connect(self._on_redetect_faces)
+        self._act_cluster.triggered.connect(self._on_cluster_faces)
+        self._act_recluster.triggered.connect(self._on_recluster_faces)
+        self._act_unassigned.triggered.connect(self._on_unassigned_faces)
+        self._act_writeback.triggered.connect(self._on_write_metadata)
+        self._act_geocode.triggered.connect(self._on_geocode)
+        self._act_trips.triggered.connect(self._on_group_trips)
+        self._act_merge_pl.triggered.connect(self._on_merge_nearby_places)
+        self._act_tag.triggered.connect(self._on_tag_topics)
+        self._act_quality.triggered.connect(self._on_score_quality)
+        self._act_dupes.triggered.connect(self._on_find_near_dupes)
+
+    def _build_menubar(self) -> None:
+        mb = self.menuBar()
+
+        # ── File ──────────────────────────────────────────────────────
+        m = mb.addMenu("&File")
+        m.addAction(self._act_open)
+        m.addAction(self._act_rescan)
+        m.addSeparator()
+        m.addAction(self._act_export)
+        m.addAction(self._act_import)
+        m.addSeparator()
+        m.addAction(self._act_settings)
+        m.addSeparator()
+        m.addAction(self._act_quit)
+
+        # ── View ──────────────────────────────────────────────────────
+        m = mb.addMenu("&View")
+        m.addAction(self._act_sidebar)
+        m.addAction(self._act_props)
+        m.addAction(self._act_filterbar)
+        m.addSeparator()
+        m.addAction(self._act_cull)
+        m.addSeparator()
+        m.addAction(self._act_group_sim)
+
+        # ── Faces ─────────────────────────────────────────────────────
+        m = mb.addMenu("F&aces")
+        m.addAction(self._act_detect)
+        m.addAction(self._act_redetect)
+        m.addSeparator()
+        m.addAction(self._act_cluster)
+        m.addAction(self._act_recluster)
+        m.addSeparator()
+        m.addAction(self._act_unassigned)
+        m.addSeparator()
+        m.addAction(self._act_writeback)
+
+        # ── Places ────────────────────────────────────────────────────
+        m = mb.addMenu("&Places")
+        m.addAction(self._act_geocode)
+        m.addAction(self._act_trips)
+        m.addAction(self._act_merge_pl)
+
+        # ── Library ───────────────────────────────────────────────────
+        m = mb.addMenu("&Library")
+        m.addAction(self._act_tag)
+        m.addAction(self._act_quality)
+        m.addAction(self._act_dupes)
+
+    # ------------------------------------------------------------------
     def _start_worker(self) -> None:
         self._worker = JobWorker(
             self._catalog_path,
@@ -102,6 +247,10 @@ class MainWindow(QMainWindow):
                 if event[0] == "thumbnail":
                     _, photo_id, thumb_path = event
                     self._grid.update_thumbnail(photo_id, thumb_path)
+                elif event[0] == "job_error":
+                    self._job_error_count += 1
+                    self._error_label.setText(f"⚠ {self._job_error_count} error{'s' if self._job_error_count != 1 else ''}")
+                    self._error_label.setVisible(True)
                 elif event[0] == "geocode_done":
                     stats = event[1]
                     self._progress.setVisible(False)
@@ -118,132 +267,25 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Picurate")
         self.resize(1280, 820)
 
-        # ── Toolbar ──────────────────────────────────────────────────
+        # ── Slim Toolbar ──────────────────────────────────────────────
         toolbar = QToolBar("Main")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        open_act = QAction("Open Folder…", self)
-        open_act.setShortcut("Ctrl+O")
-        open_act.triggered.connect(self._on_open_folder)
-        toolbar.addAction(open_act)
-
-        rescan_act = QAction("Rescan", self)
-        rescan_act.setShortcut("F5")
-        rescan_act.triggered.connect(self._on_rescan)
-        toolbar.addAction(rescan_act)
-
+        toolbar.addAction(self._act_open)
+        toolbar.addAction(self._act_rescan)
         toolbar.addSeparator()
-
-        sidebar_act = QAction("Sidebar", self)
-        sidebar_act.setCheckable(True)
-        sidebar_act.setChecked(True)
-        sidebar_act.triggered.connect(self._toggle_sidebar)
-        toolbar.addAction(sidebar_act)
-        self._sidebar_action = sidebar_act
-
-        props_act = QAction("Properties", self)
-        props_act.setCheckable(True)
-        props_act.setChecked(True)
-        props_act.triggered.connect(self._toggle_props)
-        toolbar.addAction(props_act)
-        self._props_action = props_act
-
-        filterbar_act = QAction("Filter Bar", self)
-        filterbar_act.setCheckable(True)
-        filterbar_act.setChecked(True)
-        filterbar_act.setShortcut("Ctrl+F")
-        filterbar_act.triggered.connect(self._toggle_filterbar)
-        toolbar.addAction(filterbar_act)
-        self._filterbar_action = filterbar_act
-
-        settings_act = QAction("Settings…", self)
-        settings_act.setShortcut("Ctrl+,")
-        settings_act.triggered.connect(self._on_settings)
-        toolbar.addAction(settings_act)
-
+        toolbar.addAction(self._act_sidebar)
+        toolbar.addAction(self._act_props)
+        toolbar.addAction(self._act_filterbar)
         toolbar.addSeparator()
-
-        cull_act = QAction("Cull Mode", self)
-        cull_act.setCheckable(True)
-        cull_act.setChecked(False)
-        cull_act.triggered.connect(self._toggle_cull_mode)
-        toolbar.addAction(cull_act)
-        self._cull_action = cull_act
-
+        toolbar.addAction(self._act_cull)   # Cull Mode in toolbar (user request)
         toolbar.addSeparator()
+        toolbar.addAction(self._act_settings)
 
-        export_act = QAction("Export…", self)
-        export_act.setShortcut("Ctrl+E")
-        export_act.triggered.connect(self._on_export)
-        toolbar.addAction(export_act)
-
-        import_act = QAction("Import…", self)
-        import_act.setShortcut("Ctrl+I")
-        import_act.triggered.connect(self._on_import)
-        toolbar.addAction(import_act)
-
-        toolbar.addSeparator()
-
-        geocode_act = QAction("Geocode GPS", self)
-        geocode_act.setToolTip("Reverse-geocode all GPS-tagged photos (offline)")
-        geocode_act.triggered.connect(self._on_geocode)
-        toolbar.addAction(geocode_act)
-
-        trips_act = QAction("Group Trips", self)
-        trips_act.setToolTip("Auto-group photos into trips by date gap")
-        trips_act.triggered.connect(self._on_group_trips)
-        toolbar.addAction(trips_act)
-
-        faces_act = QAction("Detect Faces", self)
-        faces_act.setToolTip("Enqueue face detection for all photos without face data")
-        faces_act.triggered.connect(self._on_detect_faces)
-        toolbar.addAction(faces_act)
-
-        redetect_act = QAction("Re-detect Faces", self)
-        redetect_act.setToolTip("Force re-detection on photos with only tiny/poor faces (< 60 px)")
-        redetect_act.triggered.connect(self._on_redetect_faces)
-        toolbar.addAction(redetect_act)
-
-        cluster_act = QAction("Cluster Faces", self)
-        cluster_act.setToolTip("Group similar faces into people")
-        cluster_act.triggered.connect(self._on_cluster_faces)
-        toolbar.addAction(cluster_act)
-
-        recluster_act = QAction("Re-cluster Faces", self)
-        recluster_act.setToolTip("Reset auto-named persons and re-cluster all faces from scratch")
-        recluster_act.triggered.connect(self._on_recluster_faces)
-        toolbar.addAction(recluster_act)
-
-        tag_act = QAction("Tag Topics", self)
-        tag_act.setToolTip("Enqueue CLIP topic tagging for all photos")
-        tag_act.triggered.connect(self._on_tag_topics)
-        toolbar.addAction(tag_act)
-
-        quality_act = QAction("Score Quality", self)
-        quality_act.setToolTip("Enqueue quality scoring for all photos")
-        quality_act.triggered.connect(self._on_score_quality)
-        toolbar.addAction(quality_act)
-
-        dupes_act = QAction("Find Near-Dupes", self)
-        dupes_act.setToolTip("Detect near-duplicate photos using perceptual hashing")
-        dupes_act.triggered.connect(self._on_find_near_dupes)
-        toolbar.addAction(dupes_act)
-
-        writeback_act = QAction("Write Metadata", self)
-        writeback_act.setToolTip("Mirror ratings/captions/keywords back to file XMP (requires exiftool)")
-        writeback_act.triggered.connect(self._on_write_metadata)
-        toolbar.addAction(writeback_act)
-
-        group_act = QAction("Group Similar", self)
-        group_act.setToolTip("Group similar/burst photos and suggest the best to keep")
-        group_act.triggered.connect(self._on_group_similar)
-        toolbar.addAction(group_act)
-
-        proximity_act = QAction("Merge Nearby Places", self)
-        proximity_act.setToolTip("Merge place records within 500 m of each other")
-        proximity_act.triggered.connect(self._on_merge_nearby_places)
-        toolbar.addAction(proximity_act)
+        # Keep reference for toggle_cull_mode sync
+        self._cull_action = self._act_cull
+        self._filterbar_action = self._act_filterbar
 
         # ── Central three-pane splitter ───────────────────────────────
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -266,11 +308,13 @@ class MainWindow(QMainWindow):
         self._grid = ThumbnailGrid(self._catalog_path)
         self._grid.photo_activated.connect(self._on_photo_activated)
         self._grid.photo_selected.connect(self._on_photo_selected)
+        self._grid.rating_changed.connect(self._on_grid_rating_changed)
+        self._grid.flag_changed.connect(self._on_grid_flag_changed)
         center_layout.addWidget(self._grid)
 
         self._splitter.addWidget(self._center)
 
-        self._props = PropertiesPanel()
+        self._props = PropertiesPanel(self._catalog_path)
         self._splitter.addWidget(self._props)
 
         self._splitter.setStretchFactor(0, 0)
@@ -283,9 +327,13 @@ class MainWindow(QMainWindow):
         self._progress = QProgressBar()
         self._progress.setMaximumWidth(200)
         self._progress.setVisible(False)
+        self._error_label = QLabel("")
+        self._error_label.setStyleSheet("color: #cc4400; font-weight: bold;")
+        self._error_label.setVisible(False)
 
         status_bar = QStatusBar()
         status_bar.addWidget(self._status_label)
+        status_bar.addPermanentWidget(self._error_label)
         status_bar.addPermanentWidget(self._progress)
         self.setStatusBar(status_bar)
 
@@ -373,6 +421,24 @@ class MainWindow(QMainWindow):
         )
         self._loupe.show()
 
+    def _on_grid_rating_changed(self, photo_id: int, rating: int) -> None:
+        """Refresh props panel when grid keyboard shortcut changes rating."""
+        from core.db.catalog import get_connection
+        from core.query import get_photo_by_id
+        conn = get_connection(self._catalog_path)
+        row = get_photo_by_id(conn, photo_id)
+        if row:
+            self._props.show_photo(row)
+
+    def _on_grid_flag_changed(self, photo_id: int, flag: int) -> None:
+        """Refresh props panel when grid keyboard shortcut changes flag."""
+        from core.db.catalog import get_connection
+        from core.query import get_photo_by_id
+        conn = get_connection(self._catalog_path)
+        row = get_photo_by_id(conn, photo_id)
+        if row:
+            self._props.show_photo(row)
+
     # ------------------------------------------------------------------
     def _on_open_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Select Photo Folder")
@@ -459,7 +525,6 @@ class MainWindow(QMainWindow):
 
     def _on_redetect_faces(self) -> None:
         from core.faces import detect_faces_batch
-        from PySide6.QtWidgets import QMessageBox
         r = QMessageBox.question(
             self, "Re-detect Faces",
             "This will re-run face detection on photos that only have tiny/distant faces "
@@ -489,7 +554,6 @@ class MainWindow(QMainWindow):
         from core.clustering import cluster_unassigned_faces
         from core.people import cleanup_empty_persons
 
-        # Unassign faces from auto-named persons (name matches 'Person <digits>')
         conn = get_connection(self._catalog_path)
         auto_persons = conn.execute(
             "SELECT id FROM people WHERE name GLOB 'Person [0-9]*'"
@@ -513,6 +577,12 @@ class MainWindow(QMainWindow):
             f"{cleaned} orphans removed."
         )
         self._sidebar.refresh()
+
+    def _on_unassigned_faces(self) -> None:
+        from ui.unassigned_faces import UnassignedFacesDialog
+        dlg = UnassignedFacesDialog(self._catalog_path, self)
+        dlg.people_changed.connect(self._sidebar.refresh)
+        dlg.exec()
 
     def _on_tag_topics(self) -> None:
         from core.topics import tag_photos_batch
@@ -554,7 +624,7 @@ class MainWindow(QMainWindow):
         conn = __import__("core.db.catalog", fromlist=["get_connection"]).get_connection(self._catalog_path)
         rows = get_photos(conn, limit=5000, **merged)
         ids = [r["id"] for r in rows]
-        scope = repr(sorted(merged.items()))[:120]  # stable key from the active filter
+        scope = repr(sorted(merged.items()))[:120]
         dlg = GroupViewDialog(ids, self._catalog_path, scope=scope, parent=self)
         dlg.collection_changed.connect(self._sidebar.refresh)
         dlg.exec()

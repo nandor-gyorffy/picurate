@@ -51,8 +51,9 @@ def _fmt_gps(lat: float | None, lon: float | None) -> str:
 
 
 class PropertiesPanel(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, catalog_path: Path | None = None, parent=None):
         super().__init__(parent)
+        self._catalog_path = catalog_path
         self.setMinimumWidth(200)
         self.setMaximumWidth(320)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
@@ -79,7 +80,7 @@ class PropertiesPanel(QWidget):
 
         self._labels: dict[str, QLabel] = {}
         for key in ("Filename", "Date", "Camera", "Dimensions", "File size", "GPS",
-                    "Status", "Caption", "Keywords"):
+                    "Status", "People", "Caption", "Keywords"):
             val = QLabel("—")
             val.setWordWrap(True)
             val.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -107,6 +108,26 @@ class PropertiesPanel(QWidget):
         self._labels["File size"].setText(_fmt_size(row["file_size"]))
         self._labels["GPS"].setText(_fmt_gps(row["gps_lat"], row["gps_lon"]))
         self._labels["Status"].setText(str(row["status"]))
+
+        # People: query faces → people for this photo
+        people_text = "—"
+        if self._catalog_path:
+            try:
+                from core.db.catalog import get_connection
+                conn = get_connection(self._catalog_path)
+                person_rows = conn.execute(
+                    """SELECT DISTINCT pe.name
+                       FROM faces f JOIN people pe ON pe.id = f.person_id
+                       WHERE f.photo_id = ?
+                       ORDER BY pe.name""",
+                    (row["id"],)
+                ).fetchall()
+                if person_rows:
+                    people_text = ", ".join(r["name"] for r in person_rows)
+            except Exception:
+                pass
+        self._labels["People"].setText(people_text)
+
         try:
             self._labels["Caption"].setText(row["caption"] or "—")
             kw = (row["keywords"] or "").replace(",", ", ").strip(" ,") or "—"

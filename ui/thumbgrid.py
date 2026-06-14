@@ -83,8 +83,10 @@ class _ThumbDelegate(QStyledItemDelegate):
 # ── Thumbnail grid widget ─────────────────────────────────────────────────────
 
 class ThumbnailGrid(QWidget):
-    photo_activated = Signal(int)   # double-click → loupe
+    photo_activated = Signal(int)   # double-click / Enter → loupe
     photo_selected  = Signal(int)   # single-click  → props panel
+    rating_changed  = Signal(int, int)  # (photo_id, rating) — keyboard shortcut
+    flag_changed    = Signal(int, int)  # (photo_id, flag)   — keyboard shortcut
 
     def __init__(self, catalog_path: Path, parent=None):
         super().__init__(parent)
@@ -133,6 +135,7 @@ class ThumbnailGrid(QWidget):
         self._list.itemClicked.connect(self._on_clicked)
         self._list.itemDoubleClicked.connect(self._on_double_clicked)
         self._list.customContextMenuRequested.connect(self._on_context_menu)
+        self._list.installEventFilter(self)
         layout.addWidget(self._list)
 
         # lazy pixmap loader
@@ -250,6 +253,58 @@ class ThumbnailGrid(QWidget):
         ]
         if self._pending:
             self._pixmap_timer.start()
+
+    def _current_photo_id(self) -> int | None:
+        item = self._list.currentItem()
+        return item.data(_ROLE_ID) if item else None
+
+    def eventFilter(self, obj, event) -> bool:
+        from PySide6.QtCore import QEvent
+        if obj is self._list and event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            pid = self._current_photo_id()
+            if pid is None:
+                return False
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self.photo_activated.emit(pid)
+                return True
+            if key == Qt.Key.Key_Space:
+                # Toggle pick flag: unflagged→picked, picked→unflagged, rejected→unflagged
+                from core.db.catalog import get_connection
+                row = get_connection(self._catalog_path).execute(
+                    "SELECT flag FROM photos WHERE id=?", (pid,)
+                ).fetchone()
+                current_flag = (row["flag"] or 0) if row else 0
+                new_flag = _meta.FLAG_PICK if current_flag != _meta.FLAG_PICK else _meta.FLAG_NONE
+                self._set_flag(pid, new_flag)
+                self.flag_changed.emit(pid, new_flag)
+                return True
+            if key == Qt.Key.Key_P:
+                self._set_flag(pid, _meta.FLAG_PICK)
+                self.flag_changed.emit(pid, _meta.FLAG_PICK)
+                return True
+            if key == Qt.Key.Key_X:
+                self._set_flag(pid, _meta.FLAG_REJECT)
+                self.flag_changed.emit(pid, _meta.FLAG_REJECT)
+                return True
+            if key == Qt.Key.Key_U:
+                self._set_flag(pid, _meta.FLAG_NONE)
+                self.flag_changed.emit(pid, _meta.FLAG_NONE)
+                return True
+            if Qt.Key.Key_1 <= key <= Qt.Key.Key_5:
+                rating = key - Qt.Key.Key_0
+                self._set_rating(pid, rating)
+                self.rating_changed.emit(pid, rating)
+                return True
+            if key == Qt.Key.Key_0:
+                self._set_rating(pid, 0)
+                self.rating_changed.emit(pid, 0)
+                return True
+            if key == Qt.Key.Key_Z and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+                self._set_rating(pid, 0)
+                self.rating_changed.emit(pid, 0)
+                return True
+        return False
 
     def _on_clicked(self, item: QListWidgetItem) -> None:
         pid = item.data(_ROLE_ID)

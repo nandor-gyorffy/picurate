@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.db.catalog import get_connection
-from core.faces import get_face_crop_pixmap
+from core.faces import get_face_crop_pixmap, delete_face
 from core.people import rename_person, delete_person, get_people
 
 
@@ -124,6 +124,11 @@ class FaceReviewDialog(QDialog):
             f"Move {len(items)} face(s) to person…",
             lambda: self._move_to_person(items)
         )
+        menu.addSeparator()
+        menu.addAction(
+            f"Not a face — delete {len(items)} permanently",
+            lambda: self._delete_permanently(items)
+        )
         menu.exec(self._grid.viewport().mapToGlobal(pos))
 
     def _unassign(self, items: list) -> None:
@@ -136,6 +141,20 @@ class FaceReviewDialog(QDialog):
             )
         self._load_faces()
         self.people_changed.emit()
+
+    def _delete_permanently(self, items: list) -> None:
+        n = len(items)
+        r = QMessageBox.question(
+            self, "Delete Faces",
+            f"Permanently delete {n} face record{'s' if n != 1 else ''} from the database?\n"
+            "This cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if r == QMessageBox.StandardButton.Yes:
+            for it in items:
+                delete_face(it.data(Qt.ItemDataRole.UserRole), self._catalog_path)
+            self._load_faces()
+            self.people_changed.emit()
 
     def _move_to_person(self, items: list) -> None:
         from core.db.catalog import CatalogWriter
