@@ -3,15 +3,20 @@
 import sys
 import os
 import traceback
+from pathlib import Path
 
 # High-DPI scaling — must be set before QApplication is created.
 os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from core.db.catalog import integrity_check, open_catalog, restore_latest_backup
 from core.logger import get_logger
 from core.paths import catalog_path
+
+# Resolve the app's base directory whether running from source or PyInstaller bundle
+_BASE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 
 log = get_logger("picurate")
 
@@ -30,6 +35,10 @@ def main() -> int:
     app.setApplicationName("Picurate")
     app.setApplicationVersion("0.1.0")
     app.setOrganizationName("Picurate")
+
+    _icon = _BASE / "assets" / "icon" / "picurate.png"
+    if _icon.exists():
+        app.setWindowIcon(QIcon(str(_icon)))
 
     try:
         cp = catalog_path()

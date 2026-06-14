@@ -1,49 +1,70 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
+    <!-- Rich teal-to-indigo gradient background -->
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#1a1a2e"/>
-      <stop offset="100%" style="stop-color:#16213e"/>
+      <stop offset="0%" style="stop-color:#0f4c75"/>
+      <stop offset="100%" style="stop-color:#1b262c"/>
     </linearGradient>
-    <linearGradient id="body" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#e8e8e8"/>
-      <stop offset="100%" style="stop-color:#c0c0c0"/>
+    <!-- Aperture blade gradient: white to soft ice-blue -->
+    <linearGradient id="blade" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff" stop-opacity="0.95"/>
+      <stop offset="100%" style="stop-color:#b8d9f0" stop-opacity="0.85"/>
     </linearGradient>
-    <linearGradient id="lens" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#4a90d9"/>
-      <stop offset="100%" style="stop-color:#1a5fa8"/>
+    <!-- Lens centre gradient: deep blue to midnight -->
+    <linearGradient id="lens" x1="20%" y1="20%" x2="80%" y2="80%">
+      <stop offset="0%" style="stop-color:#1565c0"/>
+      <stop offset="100%" style="stop-color:#0a1628"/>
     </linearGradient>
+    <!-- Golden star gradient -->
+    <linearGradient id="star" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffd700"/>
+      <stop offset="100%" style="stop-color:#f0a500"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
   </defs>
 
   <!-- Background rounded square -->
-  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="108" fill="url(#bg)"/>
 
-  <!-- Camera body -->
-  <rect x="80" y="170" width="352" height="240" rx="32" fill="url(#body)"/>
+  <!-- Subtle inner vignette ring for depth -->
+  <circle cx="256" cy="256" r="230" fill="none" stroke="white" stroke-width="1" opacity="0.06"/>
 
-  <!-- Viewfinder bump -->
-  <rect x="160" y="130" width="140" height="60" rx="20" fill="#d0d0d0"/>
+  <!-- Camera aperture: 6 blades arranged around centre -->
+  <!-- Each blade is a rounded parallelogram; rotated in 60° steps -->
+  <g transform="translate(256,256)" filter="url(#shadow)">
+    <g opacity="0.92">
+      <ellipse cx="0" cy="-82" rx="34" ry="68" fill="url(#blade)" transform="rotate(0)"/>
+      <ellipse cx="0" cy="-82" rx="34" ry="68" fill="url(#blade)" transform="rotate(60)"/>
+      <ellipse cx="0" cy="-82" rx="34" ry="68" fill="url(#blade)" transform="rotate(120)"/>
+      <ellipse cx="0" cy="-82" rx="34" ry="68" fill="url(#blade)" transform="rotate(180)"/>
+      <ellipse cx="0" cy="-82" rx="34" ry="68" fill="url(#blade)" transform="rotate(240)"/>
+      <ellipse cx="0" cy="-82" rx="34" ry="68" fill="url(#blade)" transform="rotate(300)"/>
+    </g>
 
-  <!-- Lens outer ring -->
-  <circle cx="256" cy="295" r="95" fill="#888"/>
-
-  <!-- Lens inner -->
-  <circle cx="256" cy="295" r="80" fill="url(#lens)"/>
-
-  <!-- Lens highlight -->
-  <circle cx="256" cy="295" r="55" fill="#1565c0" opacity="0.7"/>
-  <circle cx="230" cy="270" r="18" fill="white" opacity="0.25"/>
-  <circle cx="278" cy="318" r="6" fill="white" opacity="0.15"/>
-
-  <!-- Lens shine dot -->
-  <circle cx="233" cy="268" r="8" fill="white" opacity="0.55"/>
-
-  <!-- Star (top right corner — the "curate" signal) -->
-  <g transform="translate(390,145) scale(0.9)">
-    <polygon points="0,-28 6.5,-10 25,-10 11,2 16,20 0,9 -16,20 -11,2 -25,-10 -6.5,-10"
-             fill="#f4c430" stroke="#d4a800" stroke-width="2"/>
+    <!-- Lens centre circle -->
+    <circle cx="0" cy="0" r="80" fill="url(#lens)" filter="url(#shadow)"/>
+    <!-- Lens highlight rings -->
+    <circle cx="0" cy="0" r="80" fill="none" stroke="white" stroke-width="2.5" opacity="0.18"/>
+    <circle cx="0" cy="0" r="58" fill="none" stroke="white" stroke-width="1.5" opacity="0.12"/>
+    <!-- Lens specular highlight -->
+    <ellipse cx="-22" cy="-24" rx="20" ry="13" fill="white" opacity="0.22" transform="rotate(-30,-22,-24)"/>
+    <circle cx="-26" cy="-28" r="6" fill="white" opacity="0.40"/>
   </g>
 
-  <!-- Shutter button -->
-  <circle cx="400" cy="195" r="18" fill="#a0a0a0"/>
-  <circle cx="400" cy="195" r="12" fill="#888"/>
+  <!-- Gold star badge — bottom-right, indicating "curate" -->
+  <g transform="translate(378, 370)" filter="url(#glow)">
+    <circle cx="0" cy="0" r="52" fill="url(#bg)" opacity="0.7"/>
+    <circle cx="0" cy="0" r="48" fill="#0f2a40" opacity="0.85"/>
+    <!-- 5-point star -->
+    <polygon
+      points="0,-36  8.3,-12  34,-12  13.5,5  21.2,30  0,15  -21.2,30  -13.5,5  -34,-12  -8.3,-12"
+      fill="url(#star)" stroke="#c8860a" stroke-width="1.5"
+    />
+  </g>
 </svg>
