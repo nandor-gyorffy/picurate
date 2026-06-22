@@ -4,10 +4,15 @@ Type=Application
 Name=Picurate
 GenericName=Photo Organizer
 Comment=Local photo organizer — sort by people, places, topics
-Exec=bash -c "cd %k && .venv/bin/python3 main.py"
-Icon=/home/nandor-gyorffy/Programming/picurate/assets/icon/picurate.png
+Exec=bash -c "cd PICURATE_DIR && PICURATE_PYTHON main.py"
+Icon=picurate
 Terminal=false
 Categories=Graphics;Photography;
 Keywords=photos;pictures;organizer;curation;
 StartupWMClass=picurate
 MimeType=image/jpeg;image/png;image/heic;image/tiff;image/webp;
+
+# ── TEMPLATE FILE ──────────────────────────────────────────────────────────────
+# Run ./install_launcher.sh to install a working launcher for your user.
+# That script replaces PICURATE_DIR and PICURATE_PYTHON with absolute paths
+# and copies the icon to the system hicolor theme.

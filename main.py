@@ -72,6 +72,16 @@ def main() -> int:
         _show_crash_dialog(exc)
         return 1
 
+    # Show first-run wizard once on a fresh install
+    try:
+        from core.firstrun import is_first_run
+        if is_first_run():
+            from ui.firstrun_dialog import FirstRunDialog
+            dlg = FirstRunDialog(_BASE, parent=win)
+            dlg.exec()
+    except Exception:
+        pass  # never block startup over the welcome dialog
+
     return app.exec()
 
 
