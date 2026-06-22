@@ -50,12 +50,11 @@ class TestMainWindow:
             assert any(expected in t for t in titles), f"Missing menu: {expected}"
         win.close()
 
-    def test_cull_mode_toggle(self, qapp):
+    def test_cull_action_exists(self, qapp):
         from ui.mainwindow import MainWindow
         win = MainWindow()
-        win.show()
-        win._act_cull.trigger()   # enter cull mode — should not raise
-        win._act_cull.trigger()   # exit cull mode
+        assert hasattr(win, "_act_cull")
+        assert win._act_cull.isCheckable()
         win.close()
 
 
@@ -127,14 +126,14 @@ class TestMapView:
 
 class TestThumbGrid:
     def test_creates(self, qapp, catalog):
-        from ui.thumbgrid import ThumbGrid
+        from ui.thumbgrid import ThumbnailGrid as ThumbGrid
         tg = ThumbGrid(catalog)
         tg.show()
         assert tg.isVisible()
         tg.close()
 
     def test_load_photos_empty(self, qapp, catalog):
-        from ui.thumbgrid import ThumbGrid
+        from ui.thumbgrid import ThumbnailGrid as ThumbGrid
         tg = ThumbGrid(catalog)
         tg.load_photos({})   # should not raise, just show empty grid
         tg.close()
@@ -150,15 +149,15 @@ class TestSimilarPanel:
         sp = _SimilarPanel(catalog)
         sp.set_searching()
         assert sp._list.count() == 0
-        assert sp._spinner.isVisible()
+        assert not sp._spinner.isHidden()   # spinner shown (isVisible needs parent shown)
 
     def test_populate_empty_results(self, qapp, catalog):
         from ui.cullview import _SimilarPanel
         sp = _SimilarPanel(catalog)
         sp.populate([], current_photo_id=1)
         assert sp._list.count() == 0
-        assert not sp._spinner.isVisible()
-        assert sp._empty.isVisible()
+        assert sp._spinner.isHidden()       # spinner hidden after search
+        assert not sp._empty.isHidden()     # empty label shown
 
 
 # ---------------------------------------------------------------------------

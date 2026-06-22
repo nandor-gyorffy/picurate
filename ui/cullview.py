@@ -1,8 +1,8 @@
 """Cull/review mode: step through photos, rate, flag, with always-on similarity panel."""
 from __future__ import annotations
 from pathlib import Path
-from PySide6.QtCore import Qt, QThread, Signal, QSize, QKeySequence
-from PySide6.QtGui import QImage, QPixmap, QShortcut, QIcon
+from PySide6.QtCore import Qt, QThread, Signal, QSize
+from PySide6.QtGui import QImage, QKeySequence, QPixmap, QShortcut, QIcon
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QProgressBar,
     QPushButton, QScrollArea, QSizePolicy, QSplitter, QStackedWidget,

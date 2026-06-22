@@ -126,7 +126,7 @@ class MapView(QDialog):
         rows = conn.execute(
             "SELECT id, filename, gps_lat, gps_lon, thumbnail_path, rating "
             "FROM photos WHERE gps_lat IS NOT NULL AND gps_lon IS NOT NULL "
-            "ORDER BY taken_at"
+            "ORDER BY date_taken"
         ).fetchall()
         markers = [
             {
