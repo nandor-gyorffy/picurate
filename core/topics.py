@@ -28,19 +28,44 @@ from core.tags import add_photo_tag, get_or_create_tag
 log = get_logger("picurate.topics")
 
 DEFAULT_LABELS: list[str] = [
+    # People & moments
     "portrait", "group photo", "selfie",
-    "landscape", "nature", "mountains", "beach", "forest", "desert", "snow",
-    "cityscape", "architecture", "street photography", "interior",
-    "sunset", "sunrise", "night", "fireworks",
-    "animals", "pets", "wildlife",
-    "food", "drink",
-    "sports", "action",
-    "travel", "vacation",
-    "family", "children", "wedding", "party", "celebration",
-    "flowers", "plants", "water", "sky", "clouds",
-    "abstract", "black and white", "macro",
-    "vehicles", "boats", "aircraft",
-    "art", "music",
+    "family", "children", "baby", "wedding", "party", "celebration", "graduation",
+    # Nature & weather
+    "landscape", "nature", "mountains", "beach", "forest", "desert", "snow", "rain",
+    "sunset", "sunrise", "night sky", "stars", "aurora", "fog", "rainbow",
+    "flowers", "plants", "trees", "water", "river", "lake", "ocean", "waterfall",
+    "sky", "clouds", "storm",
+    # Animals
+    "animals", "pets", "dog", "cat", "wildlife", "birds",
+    # Urban & architecture
+    "cityscape", "architecture", "street photography", "interior", "fireworks",
+    "bridge", "church", "cathedral", "mosque", "temple", "palace",
+    # Famous landmarks
+    "Colosseum", "Eiffel Tower", "Statue of Liberty", "Big Ben",
+    "Sagrada Familia", "Acropolis", "Parthenon", "Pantheon",
+    "Taj Mahal", "Great Wall of China", "Great Pyramid", "Sphinx",
+    "Machu Picchu", "Angkor Wat", "Hagia Sophia",
+    "Sydney Opera House", "Golden Gate Bridge", "Tokyo Tower",
+    "Burj Khalifa", "Petronas Towers", "Niagara Falls",
+    "Mont Saint-Michel", "Neuschwanstein Castle",
+    "Vatican", "Sistine Chapel", "Louvre", "Colosseum Rome",
+    "Santorini", "Venice canals", "Amsterdam canals",
+    "Times Square", "Central Park", "Stonehenge",
+    # Activities & sports
+    "sports", "action", "running", "cycling", "swimming", "skiing", "surfing",
+    "hiking", "climbing", "yoga", "dancing",
+    # Food & drink
+    "food", "drink", "restaurant", "street food", "coffee",
+    # Travel scenes
+    "travel", "vacation", "airport", "train station", "market", "museum",
+    "hotel", "swimming pool", "cruise ship",
+    # Art & media
+    "art", "music", "concert", "theater",
+    # Technical styles
+    "black and white", "macro", "abstract",
+    # Vehicles
+    "vehicles", "cars", "boats", "aircraft", "motorbike",
 ]
 
 # ── Lazy model handles ─────────────────────────────────────────────────────────

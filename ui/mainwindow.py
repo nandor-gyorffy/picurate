@@ -147,6 +147,7 @@ class MainWindow(QMainWindow):
         self._act_geocode     = _act("Geocode GPS",      tip="Reverse-geocode all GPS-tagged photos (offline)")
         self._act_trips       = _act("Group Trips",      tip="Auto-group photos into trips by date gap")
         self._act_merge_pl    = _act("Merge Nearby Places", tip="Merge place records within 500 m of each other")
+        self._act_map         = _act("Places Map…",      tip="Show all GPS-tagged photos on an interactive map")
         # Library
         self._act_tag         = _act("Tag Topics",       tip="Enqueue CLIP topic tagging for all photos")
         self._act_quality     = _act("Score Quality",    tip="Enqueue quality scoring for all photos")
@@ -173,6 +174,7 @@ class MainWindow(QMainWindow):
         self._act_geocode.triggered.connect(self._on_geocode)
         self._act_trips.triggered.connect(self._on_group_trips)
         self._act_merge_pl.triggered.connect(self._on_merge_nearby_places)
+        self._act_map.triggered.connect(self._on_show_map)
         self._act_tag.triggered.connect(self._on_tag_topics)
         self._act_quality.triggered.connect(self._on_score_quality)
         self._act_dupes.triggered.connect(self._on_find_near_dupes)
@@ -216,6 +218,8 @@ class MainWindow(QMainWindow):
 
         # ── Places ────────────────────────────────────────────────────
         m = mb.addMenu("&Places")
+        m.addAction(self._act_map)
+        m.addSeparator()
         m.addAction(self._act_geocode)
         m.addAction(self._act_trips)
         m.addAction(self._act_merge_pl)
@@ -480,6 +484,7 @@ class MainWindow(QMainWindow):
 
     def _on_scan_finished(self, stats: dict) -> None:
         self._progress.setVisible(False)
+        new_count = stats.get("inserted", 0) + stats.get("updated", 0)
         self._status_label.setText(
             f"Done — {stats.get('inserted', 0)} new, "
             f"{stats.get('updated', 0)} updated, "
@@ -489,6 +494,35 @@ class MainWindow(QMainWindow):
         self._worker.wake()
         self._sidebar.refresh()
         self._grid.load_photos(self._merged_filter())
+        if new_count > 0:
+            self._auto_enrich_after_scan(new_count)
+
+    def _auto_enrich_after_scan(self, new_count: int) -> None:
+        """Silently enqueue pHash, CLIP tagging, and face detection for newly added photos."""
+        try:
+            from core.duplicates import compute_phash_batch
+            ps = compute_phash_batch(self._catalog_path)
+        except Exception:
+            ps = {"enqueued": 0}
+        try:
+            from core.topics import tag_photos_batch
+            ts = tag_photos_batch(self._catalog_path)
+        except Exception:
+            ts = {"enqueued": 0}
+        try:
+            from core.faces import detect_faces_batch
+            fs = detect_faces_batch(self._catalog_path)
+        except Exception:
+            fs = {"enqueued": 0}
+        self._worker.wake()
+        total = ps.get("enqueued", 0) + ts.get("enqueued", 0) + fs.get("enqueued", 0)
+        if total:
+            self._status_label.setText(
+                f"Scan done ({new_count} new). Enrichment queued: "
+                f"{ps.get('enqueued',0)} pHash, "
+                f"{ts.get('enqueued',0)} CLIP tags, "
+                f"{fs.get('enqueued',0)} face jobs."
+            )
 
     def _on_export(self) -> None:
         from ui.exportdialog import ExportDialog
@@ -637,6 +671,15 @@ class MainWindow(QMainWindow):
             f"{result['places_removed']} place records removed."
         )
         self._sidebar.refresh()
+
+    def _on_show_map(self) -> None:
+        if not self._catalog_path:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "No Catalog", "Open a folder first.")
+            return
+        from ui.mapview import MapView
+        dlg = MapView(self._catalog_path, parent=self)
+        dlg.exec()
 
     def _on_group_trips(self) -> None:
         from core.places import auto_group_trips
