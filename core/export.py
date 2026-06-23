@@ -60,6 +60,8 @@ def export_collection(
     stats = {"exported": 0, "skipped": 0, "errors": 0, "verify_failures": 0, "dest": str(dest_folder)}
     seq = 0
 
+    from core.edits import has_edit
+
     for i, row in enumerate(rows):
         if progress_cb:
             progress_cb(i, total)
@@ -79,9 +81,10 @@ def export_collection(
             out_name = _dest_name(row, options, seq, src.suffix)
             out_path = _unique_path(out_dir / out_name)
 
-            _copy_photo(src, out_path, options)
+            _copy_photo(src, out_path, options, photo_id=row["id"], catalog_path=catalog_path)
 
-            if not _verify(src, out_path, options):
+            photo_has_edit = has_edit(row["id"], catalog_path)
+            if not _verify(src, out_path, options, photo_has_edit=photo_has_edit):
                 log.error("Hash verify failed: %s", out_path)
                 stats["verify_failures"] += 1
             else:
@@ -147,18 +150,42 @@ def _unique_path(p: Path) -> Path:
         i += 1
 
 
-def _copy_photo(src: Path, dest: Path, options: ExportOptions) -> None:
-    if options.resize or options.strip_gps:
-        _copy_via_pillow(src, dest, options)
+def _copy_photo(
+    src: Path,
+    dest: Path,
+    options: ExportOptions,
+    photo_id: int | None = None,
+    catalog_path: Path | None = None,
+) -> None:
+    from core.edits import get_edit, has_edit
+
+    photo_has_edit = (
+        photo_id is not None
+        and catalog_path is not None
+        and has_edit(photo_id, catalog_path)
+    )
+    if options.resize or options.strip_gps or photo_has_edit:
+        edit = get_edit(photo_id, catalog_path) if photo_has_edit else None
+        _copy_via_pillow(src, dest, options, edit=edit)
     else:
         shutil.copy2(src, dest)
 
 
-def _copy_via_pillow(src: Path, dest: Path, options: ExportOptions) -> None:
+def _copy_via_pillow(
+    src: Path,
+    dest: Path,
+    options: ExportOptions,
+    edit: dict | None = None,
+) -> None:
     from PIL import Image, ImageOps
+    from core.edits import apply_edit_to_image
 
     img = Image.open(src)
     img = ImageOps.exif_transpose(img)
+
+    # Apply non-destructive edits (rotate/crop/adjustments) before resize
+    if edit is not None:
+        img = apply_edit_to_image(img, edit)
 
     if options.resize:
         img.thumbnail((options.max_dim, options.max_dim), Image.LANCZOS)
@@ -227,11 +254,11 @@ def _hash_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def _verify(src: Path, dest: Path, options: ExportOptions) -> bool:
+def _verify(src: Path, dest: Path, options: ExportOptions, photo_has_edit: bool = False) -> bool:
     """Verify copy integrity. For resized/processed copies, just check dest exists and has size > 0."""
     if not dest.exists() or dest.stat().st_size == 0:
         return False
-    if options.resize or options.strip_gps:
+    if options.resize or options.strip_gps or photo_has_edit:
         # Transformed — can't compare hashes, just verify dest is non-empty
         return True
     # Verbatim copy — hashes must match

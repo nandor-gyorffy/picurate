@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QScrollArea,
     QSizePolicy,
@@ -87,12 +88,86 @@ class PropertiesPanel(QWidget):
             self._form.addRow(f"{key}:", val)
             self._labels[key] = val
 
+        # ── Face strip ────────────────────────────────────────────────
+        # Hidden by default; shown only when the selected photo has detected faces.
+        self._face_strip_area = QScrollArea()
+        self._face_strip_area.setFixedHeight(90)
+        self._face_strip_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._face_strip_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._face_strip_area.setWidgetResizable(False)
+        self._face_strip_area.setFrameShape(QScrollArea.Shape.NoFrame)
+
+        self._face_strip_inner = QWidget()
+        self._face_strip_layout = QHBoxLayout(self._face_strip_inner)
+        self._face_strip_layout.setContentsMargins(2, 2, 2, 2)
+        self._face_strip_layout.setSpacing(4)
+        self._face_strip_area.setWidget(self._face_strip_inner)
+
+        outer.addWidget(self._face_strip_area)
+        self._face_strip_area.setVisible(False)
+
         self.clear()
 
     def clear(self) -> None:
         for lbl in self._labels.values():
             lbl.setText("—")
         self._labels["Filename"].setText("Select a photo")
+        self._face_strip_area.setVisible(False)
+        self._clear_face_strip()
+
+    def _clear_face_strip(self) -> None:
+        """Remove all face thumbnails from the strip."""
+        while self._face_strip_layout.count():
+            item = self._face_strip_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+    def _populate_face_strip(self, photo_id: int) -> None:
+        """Load face crops for photo_id and show/hide the strip accordingly."""
+        self._clear_face_strip()
+        if not self._catalog_path:
+            self._face_strip_area.setVisible(False)
+            return
+        try:
+            from core.faces import get_faces_for_photo, get_face_crop_pixmap
+            from core.db.catalog import get_connection
+            faces = get_faces_for_photo(photo_id, self._catalog_path)
+            if not faces:
+                self._face_strip_area.setVisible(False)
+                return
+
+            conn = get_connection(self._catalog_path)
+            total_w = 0
+            _FACE_SIZE = 64
+            for face in faces:
+                face_id = face["id"]
+                person_id = face.get("person_id")
+                # Get person name for tooltip
+                person_name = "Unassigned"
+                if person_id is not None:
+                    pr = conn.execute(
+                        "SELECT name FROM people WHERE id=?", (person_id,)
+                    ).fetchone()
+                    if pr:
+                        person_name = pr["name"]
+
+                pix = get_face_crop_pixmap(face_id, self._catalog_path, size=_FACE_SIZE)
+                thumb = QLabel()
+                thumb.setFixedSize(_FACE_SIZE, _FACE_SIZE)
+                thumb.setToolTip(person_name)
+                if pix:
+                    thumb.setPixmap(pix)
+                else:
+                    thumb.setStyleSheet("background: #555;")
+                self._face_strip_layout.addWidget(thumb)
+                total_w += _FACE_SIZE + 4
+
+            self._face_strip_layout.addStretch()
+            self._face_strip_inner.setFixedWidth(max(total_w + 8, 80))
+            self._face_strip_area.setVisible(True)
+
+        except Exception:
+            self._face_strip_area.setVisible(False)
 
     def show_photo(self, row: sqlite3.Row) -> None:
         cam_parts = [row["camera_make"] or "", row["camera_model"] or ""]
@@ -134,3 +209,9 @@ class PropertiesPanel(QWidget):
             self._labels["Keywords"].setText(kw)
         except (IndexError, KeyError):
             pass
+
+        # Face strip
+        try:
+            self._populate_face_strip(row["id"])
+        except Exception:
+            self._face_strip_area.setVisible(False)

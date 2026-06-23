@@ -142,6 +142,7 @@ class MainWindow(QMainWindow):
         self._act_cluster     = _act("Cluster Faces",    tip="Group similar faces into people")
         self._act_recluster   = _act("Re-cluster Faces", tip="Reset auto-named persons and re-cluster from scratch")
         self._act_unassigned  = _act("Unassigned Faces…",tip="Review and assign faces not yet linked to a person")
+        self._act_face_gallery = _act("People Gallery…", tip="Browse and manage all recognized people")
         self._act_writeback   = _act("Write Metadata",   tip="Mirror ratings/captions/keywords to XMP (requires exiftool)")
         # Places
         self._act_geocode     = _act("Geocode GPS",      tip="Reverse-geocode all GPS-tagged photos (offline)")
@@ -152,6 +153,7 @@ class MainWindow(QMainWindow):
         self._act_tag         = _act("Tag Topics",       tip="Enqueue CLIP topic tagging for all photos")
         self._act_quality     = _act("Score Quality",    tip="Enqueue quality scoring for all photos")
         self._act_dupes       = _act("Find Near-Dupes",  tip="Detect near-duplicate photos using perceptual hashing")
+        self._act_download_clip = _act("Download CLIP Models…", tip="Instructions for downloading CLIP ONNX models")
 
         # Connect signals
         self._act_open.triggered.connect(self._on_open_folder)
@@ -170,6 +172,7 @@ class MainWindow(QMainWindow):
         self._act_cluster.triggered.connect(self._on_cluster_faces)
         self._act_recluster.triggered.connect(self._on_recluster_faces)
         self._act_unassigned.triggered.connect(self._on_unassigned_faces)
+        self._act_face_gallery.triggered.connect(self._on_face_gallery)
         self._act_writeback.triggered.connect(self._on_write_metadata)
         self._act_geocode.triggered.connect(self._on_geocode)
         self._act_trips.triggered.connect(self._on_group_trips)
@@ -178,6 +181,7 @@ class MainWindow(QMainWindow):
         self._act_tag.triggered.connect(self._on_tag_topics)
         self._act_quality.triggered.connect(self._on_score_quality)
         self._act_dupes.triggered.connect(self._on_find_near_dupes)
+        self._act_download_clip.triggered.connect(self._on_download_clip)
 
     def _build_menubar(self) -> None:
         mb = self.menuBar()
@@ -213,6 +217,7 @@ class MainWindow(QMainWindow):
         m.addAction(self._act_recluster)
         m.addSeparator()
         m.addAction(self._act_unassigned)
+        m.addAction(self._act_face_gallery)
         m.addSeparator()
         m.addAction(self._act_writeback)
 
@@ -229,6 +234,8 @@ class MainWindow(QMainWindow):
         m.addAction(self._act_tag)
         m.addAction(self._act_quality)
         m.addAction(self._act_dupes)
+        m.addSeparator()
+        m.addAction(self._act_download_clip)
 
     # ------------------------------------------------------------------
     def _start_worker(self) -> None:
@@ -618,6 +625,12 @@ class MainWindow(QMainWindow):
         dlg.people_changed.connect(self._sidebar.refresh)
         dlg.exec()
 
+    def _on_face_gallery(self) -> None:
+        from ui.face_gallery import PersonGalleryDialog
+        dlg = PersonGalleryDialog(self._catalog_path, parent=self)
+        dlg.people_changed.connect(self._sidebar.refresh)
+        dlg.show()
+
     def _on_tag_topics(self) -> None:
         from core.topics import tag_photos_batch
         stats = tag_photos_batch(self._catalog_path)
@@ -639,6 +652,20 @@ class MainWindow(QMainWindow):
         groups = find_duplicate_groups(self._catalog_path)
         self._status_label.setText(
             f"Near-duplicates: {len(groups)} group{'s' if len(groups) != 1 else ''} found."
+        )
+
+    def _on_download_clip(self) -> None:
+        from core.paths import data_dir
+        clip_dir = data_dir() / "clip"
+        QMessageBox.information(
+            self,
+            "Download CLIP Models",
+            f"CLIP models must be placed in:\n{clip_dir}\n\n"
+            "Files needed:\n"
+            "  - clip_visual.onnx\n"
+            "  - clip_text.onnx\n"
+            "  - bpe_simple_vocab_16e6.txt.gz\n\n"
+            "See build/CLIP_SETUP.md for download instructions.",
         )
 
     def _on_write_metadata(self) -> None:

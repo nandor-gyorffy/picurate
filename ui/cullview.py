@@ -180,7 +180,11 @@ class _SimilarPanel(QWidget):
             else:
                 tip = f"{fname}\n{stars}\nDistance: {score}"
             item.setToolTip(tip)
-            item.setText(stars)
+            # Show score/distance as text below stars so it's visible without hovering
+            if "score" in r:
+                item.setText(f"{stars}\n{int(score*100)}%")
+            else:
+                item.setText(f"{stars}\nd={score}")
             self._list.addItem(item)
     def _on_ctx(self, pos):
         item = self._list.itemAt(pos)
@@ -326,6 +330,10 @@ class CullView(QWidget):
         col_btn = QPushButton("+ Collection")
         col_btn.clicked.connect(self._add_to_collection)
         cl.addWidget(col_btn)
+        edit_btn = QPushButton("✏ Edit")
+        edit_btn.setToolTip("Crop / rotate / adjust (non-destructive)")
+        edit_btn.clicked.connect(self._open_edit_panel)
+        cl.addWidget(edit_btn)
         cl.addStretch()
         self._status_label = QLabel("")
         self._status_label.setMinimumWidth(180)
@@ -556,6 +564,16 @@ class CullView(QWidget):
         if dlg.exec() and dlg.chosen_id is not None:
             add_photo(dlg.chosen_id, self._photo_id, self._catalog_path)
             self.collection_changed.emit()
+
+    def _open_edit_panel(self):
+        if self._photo_id is None: return
+        conn = get_connection(self._catalog_path)
+        row = get_photo_by_id(conn, self._photo_id)
+        if row is None: return
+        from ui.edit_panel import EditPanelDialog
+        dlg = EditPanelDialog(self._photo_id, row["file_path"], self._catalog_path, parent=self)
+        dlg.edit_applied.connect(lambda: self._show_photo(self._photo_id))
+        dlg.show()
 
     def set_filter(self, filter_ctx):
         self._filter_ctx = filter_ctx

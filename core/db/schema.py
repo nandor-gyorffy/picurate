@@ -158,6 +158,19 @@ MIGRATIONS: list[tuple[int, str]] = [
     );
     CREATE INDEX IF NOT EXISTS psg_group ON photo_similarity_group(group_id);
     """),
+    (5, """
+    CREATE TABLE IF NOT EXISTS photo_edits (
+        photo_id   INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+        crop_x     REAL NOT NULL DEFAULT 0.0,
+        crop_y     REAL NOT NULL DEFAULT 0.0,
+        crop_w     REAL NOT NULL DEFAULT 1.0,
+        crop_h     REAL NOT NULL DEFAULT 1.0,
+        rotate     INTEGER NOT NULL DEFAULT 0,
+        brightness REAL NOT NULL DEFAULT 0.0,
+        contrast   REAL NOT NULL DEFAULT 0.0,
+        saturation REAL NOT NULL DEFAULT 0.0
+    );
+    """),
 ]
 
 

@@ -212,6 +212,12 @@ class LoupeView(QDialog):
         zoom_fit.clicked.connect(self._image_area._fit_to_view)
         bar_layout.addWidget(zoom_fit)
 
+        edit_btn = QPushButton("✏ Edit")
+        edit_btn.setFixedWidth(56)
+        edit_btn.setToolTip("Crop / rotate / adjust this photo (non-destructive)")
+        edit_btn.clicked.connect(self._open_edit_panel)
+        bar_layout.addWidget(edit_btn)
+
         fs_btn = QPushButton("⛶")
         fs_btn.setFixedWidth(30)
         fs_btn.setToolTip("Toggle fullscreen (F)")
@@ -224,6 +230,7 @@ class LoupeView(QDialog):
         bar_layout.addWidget(close_btn)
 
         root.addWidget(bar)
+        self._edit_panel_dlg = None
 
     def _setup_shortcuts(self) -> None:
         def sc(key, slot):
@@ -291,6 +298,22 @@ class LoupeView(QDialog):
         _, next_id = get_adjacent_photo_ids(conn, self._photo_id, **self._filter_ctx)
         if next_id is not None:
             self._load(next_id)
+
+    def _open_edit_panel(self) -> None:
+        if self._photo_id is None:
+            return
+        conn = get_connection(self._catalog_path)
+        row = get_photo_by_id(conn, self._photo_id)
+        if row is None:
+            return
+        from ui.edit_panel import EditPanelDialog
+        if self._edit_panel_dlg and self._edit_panel_dlg.isVisible():
+            self._edit_panel_dlg.raise_()
+            return
+        dlg = EditPanelDialog(self._photo_id, row["file_path"], self._catalog_path, parent=self)
+        dlg.edit_applied.connect(lambda: self._load(self._photo_id))
+        dlg.show()
+        self._edit_panel_dlg = dlg
 
     def _toggle_fullscreen(self) -> None:
         if self._is_fullscreen:

@@ -23,9 +23,15 @@ def _thumb_path(photo_path: Path, size: int = 256) -> Path:
     return thumbnail_dir() / f"{key}_{size}.jpg"
 
 
-def get_thumbnail(photo_path: Path, size: int = 256) -> Path | None:
-    """Return path to cached thumbnail, generating it if needed. Returns None on error."""
+def get_thumbnail(photo_path: Path, size: int = 256, force_regen: bool = False) -> Path | None:
+    """Return path to cached thumbnail, generating it if needed. Returns None on error.
+
+    If *force_regen* is True and the cached thumbnail already exists, it is
+    deleted so the thumbnail is regenerated from the source file.
+    """
     dest = _thumb_path(photo_path, size)
+    if force_regen and dest.exists():
+        dest.unlink(missing_ok=True)
     if dest.exists():
         return dest
     return _generate(photo_path, dest, size)
