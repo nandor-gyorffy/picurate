@@ -175,7 +175,7 @@ class LoupeView(QDialog):
         splitter.addWidget(left)
 
         # Right: props panel
-        self._props = PropertiesPanel()
+        self._props = PropertiesPanel(self._catalog_path)
         splitter.addWidget(self._props)
         splitter.setSizes([820, 240])
 

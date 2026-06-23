@@ -395,12 +395,9 @@ class EditPanel(QWidget):
             # Scale to fit 400×300
             img.thumbnail((400, 300), Image.LANCZOS)
             img = img.convert("RGB")
-            qimg = QImage(
-                img.tobytes("raw", "RGB"),
-                img.width, img.height,
-                img.width * 3,
-                QImage.Format.Format_RGB888,
-            )
+            raw = img.tobytes("raw", "RGB")
+            qimg = QImage(raw, img.width, img.height, img.width * 3,
+                          QImage.Format.Format_RGB888)
             px = QPixmap.fromImage(qimg)
         except Exception:
             px = QPixmap(400, 300)

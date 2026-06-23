@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QDialog,
+    QFrame,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -111,9 +112,10 @@ class _PersonRow(QWidget):
         super().__init__(parent)
         self._person = person
         self._catalog_path = catalog_path
+        self.setMinimumHeight(_CROP_SIZE + 20)
 
         self._outer = QHBoxLayout(self)
-        self._outer.setContentsMargins(4, 4, 4, 4)
+        self._outer.setContentsMargins(4, 6, 4, 6)
         self._outer.setSpacing(8)
 
         # ── Left: name + count ───────────────────────────────────────
@@ -146,13 +148,14 @@ class _PersonRow(QWidget):
 
         # ── Center: horizontal face strip ────────────────────────────
         self._strip_scroll = QScrollArea()
-        self._strip_scroll.setFixedHeight(_CROP_SIZE + 8)
+        self._strip_scroll.setFixedHeight(_CROP_SIZE + 22)  # extra room for scrollbar
         self._strip_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._strip_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._strip_scroll.setWidgetResizable(False)
         self._strip_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         self._strip_inner = QWidget()
+        self._strip_inner.setFixedHeight(_CROP_SIZE + 4)  # just enough for 80px thumb + margins
         self._strip_layout = QHBoxLayout(self._strip_inner)
         self._strip_layout.setContentsMargins(2, 2, 2, 2)
         self._strip_layout.setSpacing(4)
@@ -366,16 +369,23 @@ class PersonGalleryDialog(QDialog):
 
     # ──────────────────────────────────────────────────────────────────
     def _refresh(self) -> None:
-        # Remove existing rows
+        # Remove existing rows and separators
         while self._list_layout.count():
             item = self._list_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+            elif item.spacerItem():
+                pass  # spacer from addStretch is automatically released
 
         people = get_people(self._catalog_path)
         self._title_label.setText(f"People ({len(people)})")
 
-        for p in people:
+        for i, p in enumerate(people):
+            if i > 0:
+                sep = QFrame(self._list_widget)
+                sep.setFrameShape(QFrame.Shape.HLine)
+                sep.setFrameShadow(QFrame.Shadow.Sunken)
+                self._list_layout.addWidget(sep)
             row = _PersonRow(p, self._catalog_path, self._list_widget)
             self._list_layout.addWidget(row)
 

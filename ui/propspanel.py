@@ -164,6 +164,7 @@ class PropertiesPanel(QWidget):
 
             self._face_strip_layout.addStretch()
             self._face_strip_inner.setFixedWidth(max(total_w + 8, 80))
+            self._face_strip_inner.setFixedHeight(_FACE_SIZE + 4)
             self._face_strip_area.setVisible(True)
 
         except Exception:
