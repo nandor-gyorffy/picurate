@@ -17,29 +17,48 @@ log = get_logger("picurate.faces")
 
 _analyzer = None          # shared FaceAnalysis instance (lazy)
 _model_ready = False      # set True once .prepare() succeeds
+_loaded_model_name = None # track which model is loaded
 
 
-def _get_analyzer():
-    """Return a FaceAnalysis instance, or None if models unavailable."""
-    global _analyzer, _model_ready
+def _get_analyzer(catalog_path: Path | None = None):
+    """Return a FaceAnalysis instance, or None if models unavailable.
+
+    Reads face_model setting ('buffalo_sc' or 'buffalo_l'). If the setting
+    changed since the last load, the old instance is discarded and reloaded.
+    """
+    global _analyzer, _model_ready, _loaded_model_name
+
+    # Determine desired model from settings
+    try:
+        from core import settings as _s
+        model_name = str(_s.get("face_model", catalog_path) or "buffalo_sc")
+    except Exception:
+        model_name = "buffalo_sc"
+
+    # If model changed, force reload
+    if _model_ready and _loaded_model_name != model_name:
+        log.info("Face model changed to %s — reloading.", model_name)
+        _analyzer = None
+        _model_ready = False
+
     if _model_ready:
         return _analyzer
     try:
-        import insightface
         from insightface.app import FaceAnalysis
 
         model_root = data_dir() / "insightface"
         model_root.mkdir(parents=True, exist_ok=True)
 
         app = FaceAnalysis(
-            name="buffalo_sc",      # lighter: ~170 MB; swap to buffalo_l for accuracy
+            name=model_name,
             root=str(model_root),
             providers=["CPUExecutionProvider"],
         )
         app.prepare(ctx_id=0, det_size=(640, 640))
         _analyzer = app
         _model_ready = True
-        log.info("InsightFace models loaded from %s", model_root)
+        _loaded_model_name = model_name
+        log.info("InsightFace %s loaded from %s", model_name, model_root)
         return _analyzer
     except Exception as exc:
         log.warning("InsightFace unavailable (%s) — face detection disabled.", exc)
@@ -51,7 +70,12 @@ def model_available() -> bool:
     return _get_analyzer() is not None
 
 
-def detect_faces(file_path: str, det_thresh: float = 0.65, min_face_px: int = 60) -> list[dict]:
+def detect_faces(
+    file_path: str,
+    det_thresh: float = 0.65,
+    min_face_px: int = 60,
+    catalog_path: Path | None = None,
+) -> list[dict]:
     """
     Run face detection + embedding on one photo file.
 
@@ -59,7 +83,7 @@ def detect_faces(file_path: str, det_thresh: float = 0.65, min_face_px: int = 60
     Only faces with det_score >= det_thresh are returned.
     Returns [] if model unavailable or file can't be read.
     """
-    analyzer = _get_analyzer()
+    analyzer = _get_analyzer(catalog_path)
     if analyzer is None:
         return []
     try:
@@ -97,7 +121,7 @@ def process_photo_faces(
     Detect faces in one photo and write results to the `faces` table.
     Returns number of faces stored.
     """
-    faces = detect_faces(file_path)
+    faces = detect_faces(file_path, catalog_path=catalog_path)
     if not faces:
         return 0
 

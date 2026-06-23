@@ -111,9 +111,20 @@ def find_similar(
 ) -> list[dict]:
     """Find similar photos using the best available method.
 
-    Tries CLIP first, falls back to pHash.
+    Reads thresholds from settings so changes in the Settings dialog take effect
+    immediately on the next search (no app restart required).
+
+    Tries CLIP first (if embeddings exist), then falls back to pHash.
     """
+    from core import settings as _s
+    phash_thresh = int(_s.get("phash_similarity_threshold", catalog_path) or 10)
+    clip_min_score = float(_s.get("clip_similarity_min_score", catalog_path) or 0.60)
+
     clip_results = find_similar_by_clip(photo_id, catalog_path, limit)
     if clip_results:
-        return clip_results
-    return find_similar_by_phash(photo_id, catalog_path, limit=limit)
+        # Filter out low-confidence CLIP results
+        filtered = [r for r in clip_results if r["score"] >= clip_min_score]
+        if filtered:
+            return filtered
+
+    return find_similar_by_phash(photo_id, catalog_path, threshold=phash_thresh, limit=limit)
