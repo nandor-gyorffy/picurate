@@ -50,3 +50,6 @@ backups/
 *.spec
 dist/
 build/
+
+# Claude Code session data
+.claude/

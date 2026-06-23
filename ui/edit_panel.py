@@ -482,11 +482,16 @@ class EditPanel(QWidget):
             saturation=_from_slider(self._sl_saturation.value()),
         )
 
-        # Regenerate thumbnail
+        # Regenerate thumbnail with edits applied
         if self._file_path:
             try:
                 from core.thumbnails import get_thumbnail
-                get_thumbnail(Path(self._file_path), force_regen=True)
+                get_thumbnail(
+                    Path(self._file_path),
+                    force_regen=True,
+                    photo_id=self._photo_id,
+                    catalog_path=self._catalog_path,
+                )
             except Exception:
                 pass
 
@@ -500,7 +505,7 @@ class EditPanel(QWidget):
         clear_edit(self._photo_id, self._catalog_path)
         self._reset_ui()
 
-        # Regenerate thumbnail
+        # Regenerate thumbnail from original (no edits)
         if self._file_path:
             try:
                 from core.thumbnails import get_thumbnail

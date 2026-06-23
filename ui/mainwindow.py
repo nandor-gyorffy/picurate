@@ -154,6 +154,9 @@ class MainWindow(QMainWindow):
         self._act_quality     = _act("Score Quality",    tip="Enqueue quality scoring for all photos")
         self._act_dupes       = _act("Find Near-Dupes",  tip="Detect near-duplicate photos using perceptual hashing")
         self._act_download_clip = _act("Download CLIP Models…", tip="Instructions for downloading CLIP ONNX models")
+        # Help
+        self._act_help          = _act("User Guide…",  "F1",   tip="Open the in-app help / user guide")
+        self._act_about         = _act("About Picurate…",      tip="Version and license information")
 
         # Connect signals
         self._act_open.triggered.connect(self._on_open_folder)
@@ -182,6 +185,8 @@ class MainWindow(QMainWindow):
         self._act_quality.triggered.connect(self._on_score_quality)
         self._act_dupes.triggered.connect(self._on_find_near_dupes)
         self._act_download_clip.triggered.connect(self._on_download_clip)
+        self._act_help.triggered.connect(self._on_help)
+        self._act_about.triggered.connect(self._on_about)
 
     def _build_menubar(self) -> None:
         mb = self.menuBar()
@@ -236,6 +241,12 @@ class MainWindow(QMainWindow):
         m.addAction(self._act_dupes)
         m.addSeparator()
         m.addAction(self._act_download_clip)
+
+        # ── Help ──────────────────────────────────────────────────────
+        m = mb.addMenu("&Help")
+        m.addAction(self._act_help)
+        m.addSeparator()
+        m.addAction(self._act_about)
 
     # ------------------------------------------------------------------
     def _start_worker(self) -> None:
@@ -721,6 +732,25 @@ class MainWindow(QMainWindow):
         from ui.settings_dialog import SettingsDialog
         dlg = SettingsDialog(self)
         dlg.exec()
+
+    def _on_help(self) -> None:
+        from ui.help_dialog import HelpDialog
+        dlg = HelpDialog(parent=self)
+        dlg.exec()
+
+    def _on_about(self) -> None:
+        QMessageBox.about(
+            self,
+            "About Picurate",
+            "<h2>Picurate 0.1.0</h2>"
+            "<p>A local, private desktop photo organizer.<br>"
+            "Sort by people, places, and topics — no cloud, no subscriptions.</p>"
+            "<p><b>Tech stack:</b> Python 3.12 · PySide6 · SQLite · "
+            "InsightFace · CLIP · Pillow</p>"
+            "<p>© 2025 Nándor Gyorffy. MIT License.</p>"
+            "<p><a href='https://github.com/nandor-gyorffy/picurate'>"
+            "github.com/nandor-gyorffy/picurate</a></p>",
+        )
 
     # ------------------------------------------------------------------
     def closeEvent(self, event) -> None:
