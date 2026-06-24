@@ -52,11 +52,11 @@ def get_or_create_place(
 
     geo = reverse_geocode(lat, lon)
     with CatalogWriter(catalog_path) as wconn:
-        wconn.execute(
+        cur = wconn.execute(
             "INSERT INTO places (city, region, country, lat, lon) VALUES (?,?,?,?,?)",
             (geo["city"], geo["region"], geo["country"], lat, lon),
         )
-        place_id = wconn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        place_id = cur.lastrowid
     return place_id
 
 
@@ -142,11 +142,11 @@ def set_place_manual(
         place_id = row["id"]
     else:
         with CatalogWriter(catalog_path) as wconn:
-            wconn.execute(
+            cur = wconn.execute(
                 "INSERT INTO places (city, region, country) VALUES (?,?,?)",
                 (city, region, country),
             )
-            place_id = wconn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            place_id = cur.lastrowid
 
     with CatalogWriter(catalog_path) as wconn:
         wconn.execute("UPDATE photos SET place_id=? WHERE id=?", (place_id, photo_id))
@@ -215,11 +215,11 @@ def auto_group_trips(
         name  = f"Trip {start}" if start == end else f"Trip {start} – {end}"
 
         with CatalogWriter(catalog_path) as wconn:
-            wconn.execute(
+            cur = wconn.execute(
                 "INSERT INTO trips (name, start_date, end_date) VALUES (?,?,?)",
                 (name, start, end),
             )
-            trip_id = wconn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            trip_id = cur.lastrowid
             for r in group:
                 wconn.execute("UPDATE photos SET trip_id=? WHERE id=?", (trip_id, r["id"]))
 

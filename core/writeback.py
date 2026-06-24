@@ -51,21 +51,22 @@ def write_back_photo(photo_id: int, catalog_path: Path | None = None) -> bool:
     if row is None:
         return False
 
+    # Pass tag values as separate list elements so special characters (= " etc.)
+    # in values are never misinterpreted as tag names by exiftool.
     args = [et, "-overwrite_original_in_place", "-P"]
 
     if row["rating"] is not None and row["rating"] > 0:
         args += [f"-XMP:Rating={row['rating']}", f"-IPTC:Urgency={6 - row['rating']}"]
 
     if row["caption"]:
-        safe = row["caption"].replace('"', '\\"')
-        args += [f'-XMP:Description={safe}', f'-IPTC:Caption-Abstract={safe}']
+        caption = row["caption"]
+        args += [f"-XMP:Description={caption}", f"-IPTC:Caption-Abstract={caption}"]
 
     if row["keywords"]:
         for kw in row["keywords"].split(","):
             kw = kw.strip()
             if kw:
-                args.append(f'-XMP:Subject={kw}')
-                args.append(f'-IPTC:Keywords={kw}')
+                args += [f"-XMP:Subject={kw}", f"-IPTC:Keywords={kw}"]
 
     args.append(row["file_path"])
 

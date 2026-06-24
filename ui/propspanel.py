@@ -57,7 +57,7 @@ class PropertiesPanel(QWidget):
         self._catalog_path = catalog_path
         self.setMinimumWidth(200)
         self.setMaximumWidth(320)
-        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 8, 8, 8)
@@ -68,14 +68,14 @@ class PropertiesPanel(QWidget):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         outer.addWidget(scroll)
 
         inner = QWidget()
         scroll.setWidget(inner)
         self._form = QFormLayout(inner)
-        self._form.setRowWrapPolicy(QFormLayout.WrapLongRows)
-        self._form.setLabelAlignment(Qt.AlignRight | Qt.AlignTop)
+        self._form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        self._form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
         self._form.setContentsMargins(0, 0, 0, 0)
         self._form.setSpacing(6)
 

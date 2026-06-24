@@ -175,11 +175,11 @@ def group_photos(
 
     with CatalogWriter(catalog_path) as wconn:
         for group in multi:
-            wconn.execute(
+            cur = wconn.execute(
                 "INSERT INTO similarity_groups (scope, threshold) VALUES (?,?)",
                 (scope, threshold),
             )
-            gid = wconn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            gid = cur.lastrowid
             created_ids.append(gid)
 
             # Find suggested best (highest quality_score)
@@ -326,7 +326,7 @@ def auto_pick_best_of_groups(
             )
             added += 1
 
-    groups = len(conn.execute(
+    groups = conn.execute(
         "SELECT COUNT(*) FROM similarity_groups WHERE scope=?", (scope,)
-    ).fetchone())
+    ).fetchone()[0]
     return {"added": added, "groups": groups}

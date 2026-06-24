@@ -112,7 +112,7 @@ class _ImageArea(QScrollArea):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if self._pixmap and self._scale == self._scale:  # always True — triggers fit on resize
+        if self._pixmap is not None:
             self._fit_to_view()
 
 

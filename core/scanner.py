@@ -157,11 +157,14 @@ def _update_file(conn: sqlite3.Connection, photo_id: int, fpath: Path, sig: str,
 
 def mark_missing(folder: Path, catalog_path: Path | None = None) -> int:
     """Mark catalogued files under *folder* that no longer exist as 'missing'."""
+    import os
     count = 0
+    # Normalise to forward slashes so the LIKE pattern works on both Linux and Windows
+    prefix = folder.as_posix().rstrip("/") + "/"
     with CatalogWriter(catalog_path) as conn:
         rows = conn.execute(
-            "SELECT id, file_path FROM photos WHERE status='ok' AND file_path LIKE ?",
-            (str(folder).rstrip("/") + "/%",),
+            "SELECT id, file_path FROM photos WHERE status='ok' AND replace(file_path,'\\','/') LIKE ?",
+            (prefix + "%",),
         ).fetchall()
         for row in rows:
             if not Path(row["file_path"]).exists():

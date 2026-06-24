@@ -94,6 +94,9 @@ def find_similar_by_clip(
     ids = [r["id"] for r in rows]
     filenames = [r["filename"] for r in rows]
     mat = np.array([json.loads(r["clip_embedding"]) for r in rows], dtype=np.float32)
+    # Normalise stored embeddings so cosine similarity is correct
+    norms = np.linalg.norm(mat, axis=1, keepdims=True)
+    mat = mat / np.where(norms > 0, norms, 1.0)
     scores = (mat @ target).tolist()
 
     results = [

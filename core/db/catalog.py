@@ -13,6 +13,7 @@ log = get_logger("picurate.catalog")
 
 _write_lock = threading.Lock()
 _local = threading.local()
+_writers: dict[str, sqlite3.Connection] = {}  # one real writer per catalog path
 
 
 def _open(path: Path) -> sqlite3.Connection:
@@ -32,11 +33,11 @@ def get_connection(path: Path | None = None) -> sqlite3.Connection:
 
 
 def writer_connection(path: Path | None = None) -> sqlite3.Connection:
-    """Return the single shared writer connection (same object every time)."""
-    p = path or catalog_path()
-    if not hasattr(_local, "writer") or _local.writer is None:
-        _local.writer = _open(p)
-    return _local.writer
+    """Return the single shared writer connection (truly one per catalog path)."""
+    key = str(path or catalog_path())
+    if key not in _writers:
+        _writers[key] = _open(Path(key))
+    return _writers[key]
 
 
 class CatalogWriter:

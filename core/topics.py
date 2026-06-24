@@ -162,10 +162,12 @@ class _SimpleTokenizer:
         self.decoder = {v: k for k, v in self.encoder.items()}
         self.bpe_ranks = dict(zip(merges, range(len(merges))))
         self.cache = {"<|startoftext|>": "<|startoftext|>", "<|endoftext|>": "<|endoftext|>"}
+        # Python's re doesn't support \p{} Unicode categories; use equivalent
+        # Unicode character classes instead (\w covers letters + digits + _).
         self.pat = re.compile(
             r"""<\|startoftext\|>|<\|endoftext\|>|'s|'t|'re|'ve|'m|'ll|'d|"""
-            r"""[\p{L}]+|[\p{N}]|[^\s\p{L}\p{N}]+""",
-            re.IGNORECASE,
+            r"""[^\W\d_]+|\d|[^\s\w]+""",
+            re.IGNORECASE | re.UNICODE,
         )
 
     def _bpe(self, token: str) -> str:

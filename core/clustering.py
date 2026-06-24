@@ -213,8 +213,8 @@ def cluster_unassigned_faces(
         # Create new person for each cluster
         for gi, group in enumerate(meaningful):
             person_name = f"Person {existing_count + gi + 1}"
-            wconn.execute("INSERT INTO people (name) VALUES (?)", (person_name,))
-            person_id = wconn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            cur = wconn.execute("INSERT INTO people (name) VALUES (?)", (person_name,))
+            person_id = cur.lastrowid
             for idx in group:
                 wconn.execute(
                     "UPDATE faces SET person_id=? WHERE id=?",

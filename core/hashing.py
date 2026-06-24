@@ -50,21 +50,36 @@ def volume_id(path: Path) -> str:
         )
         return f"win:{serial.value:08X}"
     else:
-        # Use os.stat().st_dev → look up UUID via /proc/mounts or blkid fallback
+        # Resolve a stable UUID for the filesystem containing *path*.
+        # Strategy 1: findmnt (modern Linux, works for NVMe/NFS/tmpfs alike)
+        # Strategy 2: blkid on /dev/block/<major>:<minor> (older systems)
+        # Fallback: device major:minor (not stable across reboots but better than nothing)
+        import subprocess
         dev = os.stat(path).st_dev
         major = os.major(dev)
         minor = os.minor(dev)
-        uuid_path = Path(f"/dev/block/{major}:{minor}")
+
         try:
-            import subprocess
+            result = subprocess.run(
+                ["findmnt", "--output", "UUID", "--noheadings",
+                 "--source", f"/dev/block/{major}:{minor}"],
+                capture_output=True, text=True, timeout=3,
+            )
+            uuid = result.stdout.strip()
+            if uuid and uuid != "":
+                return f"uuid:{uuid}"
+        except Exception:
+            pass
+
+        try:
             result = subprocess.run(
                 ["blkid", "-s", "UUID", "-o", "value", f"/dev/block/{major}:{minor}"],
-                capture_output=True, text=True, timeout=3
+                capture_output=True, text=True, timeout=3,
             )
             uuid = result.stdout.strip()
             if uuid:
                 return f"uuid:{uuid}"
         except Exception:
             pass
-        # Fallback: use device number (stable within a session, not across reboots)
+
         return f"dev:{major}:{minor}"

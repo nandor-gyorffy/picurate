@@ -84,14 +84,13 @@ def fix_missing_files(catalog_path: Path) -> dict:
                         if not cand.exists():
                             continue
                         if full_hash:
-                            # Quick size check first
+                            # Verify by actual content hash — not just size
                             try:
-                                if cand.stat().st_size != conn.execute(
-                                    "SELECT file_size FROM photos WHERE id=?", (photo_id,)
-                                ).fetchone()["file_size"]:
+                                from core.hashing import full_hash as compute_hash
+                                if compute_hash(cand) != full_hash:
                                     continue
                             except Exception:
-                                pass
+                                continue
                         with CatalogWriter(catalog_path) as w:
                             w.execute(
                                 "UPDATE photos SET file_path=?, filename=?, status='ok' WHERE id=?",
