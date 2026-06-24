@@ -23,34 +23,40 @@ subscriptions, no data ever leaves your machine.
 
 ## Quick Start
 
-### Linux (Ubuntu 22.04+)
+### Recommended: GUI Installer (Linux & Windows)
+
+1. Download the ZIP from GitHub: **Code → Download ZIP**
+2. Extract the ZIP anywhere (e.g. `~/Apps/picurate/`)
+3. Run the installer:
+   - **Linux**: open a terminal in the folder, run `python3 installer.py`
+   - **Windows**: double-click `installer.py` (right-click → Open with Python)
+4. Click through the wizard — it installs all dependencies and adds a desktop launcher
+5. Click **Launch Picurate** when done
+
+### Command-line install (Linux)
 
 ```bash
 git clone https://github.com/nandor-gyorffy/picurate.git
 cd picurate
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python main.py
+./setup.sh          # creates venv, installs deps, optional launcher
+./run.sh            # launch
 ```
 
-To add a desktop launcher (appears in application menu):
-
-```bash
-./install_launcher.sh
-```
-
-### Windows 10/11
+### Command-line install (Windows)
 
 ```bat
 git clone https://github.com/nandor-gyorffy/picurate.git
 cd picurate
-python -m venv .venv
-.venv\Scripts\pip install -r requirements.txt
-run.bat
+setup.bat           # creates venv, installs deps, optional desktop shortcut
+run.bat             # launch
 ```
 
-Or double-click `run.bat` from Explorer after creating the venv and installing deps.
+### Uninstalling
+
+- **Linux**: run `./uninstall.sh` in the Picurate folder
+- **Windows**: run `uninstall.bat`
+
+Both scripts remove the desktop launcher/shortcut and offer to delete catalog data and the app folder. Your original photos are never touched.
 
 ## Optional ML Components
 
