@@ -42,9 +42,13 @@ desktop.ini
 thumbnails/
 backups/
 
-# Test photos are tracked (small fixture images only); ignore large photo dumps
-# Uncomment if you add a real photo library here:
-# test-photos/
+# Test photos — personal photos; not committed to the public repo
+# Only small synthetic fixture images in tests/fixtures/ are tracked
+test-photos/
+
+# Compiled Python
+__pycache__/
+*.pyc
 
 # PyInstaller / packaging artefacts
 *.spec
