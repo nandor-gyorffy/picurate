@@ -49,12 +49,13 @@ class _ScanThread(QThread):
         self.signals = _ScanSignals()
 
     def run(self) -> None:
-        mark_missing(self.folder, self.catalog_path)
+        missing = mark_missing(self.folder, self.catalog_path)
         stats = scan_folder(
             self.folder,
             self.catalog_path,
             progress_cb=lambda done, total: self.signals.progress.emit(done, total),
         )
+        stats["missing"] = missing
         self.signals.finished.emit(stats)
 
 
@@ -154,6 +155,9 @@ class MainWindow(QMainWindow):
         self._act_quality     = _act("Score Quality",    tip="Enqueue quality scoring for all photos")
         self._act_dupes       = _act("Find Near-Dupes",  tip="Detect near-duplicate photos using perceptual hashing")
         self._act_download_clip = _act("Download CLIP Models…", tip="Instructions for downloading CLIP ONNX models")
+        # Library health / reset
+        self._act_health        = _act("Library Health…",      tip="View scan errors, missing files, and duplicates")
+        self._act_reset         = _act("Factory Reset…",       tip="Wipe all catalog data and start fresh")
         # Help
         self._act_help          = _act("User Guide…",  "F1",   tip="Open the in-app help / user guide")
         self._act_about         = _act("About Picurate…",      tip="Version and license information")
@@ -185,6 +189,8 @@ class MainWindow(QMainWindow):
         self._act_quality.triggered.connect(self._on_score_quality)
         self._act_dupes.triggered.connect(self._on_find_near_dupes)
         self._act_download_clip.triggered.connect(self._on_download_clip)
+        self._act_health.triggered.connect(self._on_library_health)
+        self._act_reset.triggered.connect(self._on_factory_reset)
         self._act_help.triggered.connect(self._on_help)
         self._act_about.triggered.connect(self._on_about)
 
@@ -200,6 +206,8 @@ class MainWindow(QMainWindow):
         m.addAction(self._act_import)
         m.addSeparator()
         m.addAction(self._act_settings)
+        m.addSeparator()
+        m.addAction(self._act_reset)
         m.addSeparator()
         m.addAction(self._act_quit)
 
@@ -239,6 +247,8 @@ class MainWindow(QMainWindow):
         m.addAction(self._act_tag)
         m.addAction(self._act_quality)
         m.addAction(self._act_dupes)
+        m.addSeparator()
+        m.addAction(self._act_health)
         m.addSeparator()
         m.addAction(self._act_download_clip)
 
@@ -350,8 +360,11 @@ class MainWindow(QMainWindow):
         self._progress.setMaximumWidth(200)
         self._progress.setVisible(False)
         self._error_label = QLabel("")
-        self._error_label.setStyleSheet("color: #cc4400; font-weight: bold;")
+        self._error_label.setStyleSheet(
+            "color: #cc4400; font-weight: bold; text-decoration: underline; cursor: pointer;"
+        )
         self._error_label.setVisible(False)
+        self._error_label.mousePressEvent = lambda _e: self._on_library_health()
 
         status_bar = QStatusBar()
         status_bar.addWidget(self._status_label)
@@ -503,12 +516,22 @@ class MainWindow(QMainWindow):
     def _on_scan_finished(self, stats: dict) -> None:
         self._progress.setVisible(False)
         new_count = stats.get("inserted", 0) + stats.get("updated", 0)
+        err_count = stats.get("errors", 0)
+        missing_count = stats.get("missing", 0)
         self._status_label.setText(
             f"Done — {stats.get('inserted', 0)} new, "
             f"{stats.get('updated', 0)} updated, "
             f"{stats.get('relinked', 0)} relinked, "
-            f"{stats.get('errors', 0)} errors"
+            f"{err_count} errors"
         )
+        if err_count or missing_count:
+            parts = []
+            if err_count:
+                parts.append(f"{err_count} scan error{'s' if err_count != 1 else ''}")
+            if missing_count:
+                parts.append(f"{missing_count} missing")
+            self._error_label.setText("⚠ " + ", ".join(parts) + " — click for details")
+            self._error_label.setVisible(True)
         self._worker.wake()
         self._sidebar.refresh()
         self._grid.load_photos(self._merged_filter())
@@ -732,6 +755,58 @@ class MainWindow(QMainWindow):
         from ui.settings_dialog import SettingsDialog
         dlg = SettingsDialog(self)
         dlg.exec()
+
+    def _on_library_health(self) -> None:
+        from ui.health_dialog import HealthDialog
+        dlg = HealthDialog(self._catalog_path, parent=self)
+        dlg.exec()
+
+    def _on_factory_reset(self) -> None:
+        from PySide6.QtWidgets import QCheckBox
+        from core.reset import factory_reset
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Factory Reset")
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setText(
+            "<b>This will permanently delete all catalog data.</b><br><br>"
+            "Everything Picurate has learned — people, places, tags, collections, "
+            "ratings, edits — will be erased. Your original photos are never touched.<br><br>"
+            "The app will restart with an empty catalog."
+        )
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
+        )
+        msg.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        cb = QCheckBox("Also delete thumbnail cache (frees disk space)")
+        cb.setChecked(True)
+        msg.setCheckBox(cb)
+
+        if msg.exec() != QMessageBox.StandardButton.Ok:
+            return
+
+        clear_thumbs = cb.isChecked()
+
+        # Stop background worker before wiping
+        if self._worker:
+            self._worker.stop()
+        if self._scan_thread and self._scan_thread.isRunning():
+            self._scan_thread.quit()
+            self._scan_thread.wait(3000)
+
+        try:
+            factory_reset(self._catalog_path, clear_thumbnails=clear_thumbs)
+        except Exception as exc:
+            QMessageBox.critical(self, "Reset Failed", str(exc))
+            return
+
+        QMessageBox.information(
+            self, "Reset Complete",
+            "Catalog cleared. Picurate will now restart."
+        )
+        import sys
+        import os
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def _on_help(self) -> None:
         from ui.help_dialog import HelpDialog

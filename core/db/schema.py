@@ -171,6 +171,15 @@ MIGRATIONS: list[tuple[int, str]] = [
         saturation REAL NOT NULL DEFAULT 0.0
     );
     """),
+    (6, """
+    CREATE TABLE IF NOT EXISTS scan_errors (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_path   TEXT NOT NULL,
+        error_msg   TEXT NOT NULL,
+        scan_time   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS scan_errors_path ON scan_errors(file_path);
+    """),
 ]
 
 

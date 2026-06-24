@@ -306,6 +306,31 @@ exiftool to be installed and on your PATH.</p>
 (determined by platformdirs). On Linux: <code>~/.local/share/picurate/</code>.
 On Windows: <code>%LOCALAPPDATA%\\picurate\\</code>. You can back this up to
 preserve your ratings, collections, and face assignments.</p>
+
+<h3>Library Health</h3>
+<p>Open via <b>Library → Library Health…</b></p>
+<p>Shows three tabs:</p>
+<ul>
+<li><b>Scan Errors</b> — files that Picurate could not read (corrupt, unsupported format,
+    permission errors). Click any row to see the full path and error message. Use
+    <em>Clear error log</em> to dismiss them once you have dealt with the cause.</li>
+<li><b>Missing Files</b> — files that were indexed but are no longer on disk
+    (moved, renamed, or deleted outside Picurate). Re-scanning the folder will
+    relink moved files and keep the others as missing until found.</li>
+<li><b>Exact Duplicates</b> — files with identical content (same full SHA-256 hash).
+    Picurate never deletes files, but this list helps you identify and remove copies
+    manually.</li>
+</ul>
+<p>The status bar shows a clickable warning badge whenever errors or missing files are
+detected during a scan.</p>
+
+<h3>Factory Reset</h3>
+<p>Available via <b>File → Factory Reset…</b></p>
+<p>Erases the catalog (database, backups, error log) and optionally the thumbnail cache.
+<b>Your original photos are never touched.</b> After a reset the app restarts with an
+empty catalog — you can then re-scan your folders to rebuild everything from scratch.</p>
+<p>Use this if you want to start over, change the folder you are organizing, or free up
+disk space used by the catalog.</p>
 """),
 ]
 

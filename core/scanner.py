@@ -53,6 +53,14 @@ def scan_folder(
         except Exception as exc:
             log.warning("Error processing %s: %s", fpath, exc)
             stats["errors"] += 1
+            try:
+                with CatalogWriter(catalog_path) as _ec:
+                    _ec.execute(
+                        "INSERT INTO scan_errors(file_path, error_msg) VALUES (?,?)",
+                        (str(fpath), str(exc)),
+                    )
+            except Exception:
+                pass
         stats["scanned"] += 1
 
     if progress_cb:
